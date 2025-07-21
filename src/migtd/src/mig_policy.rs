@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 
-use policy::verify_policy;
+use policy::verify_policy_with_collateral;
 pub use policy::PolicyError;
 
 use crate::{config::get_policy, event_log::get_event_log};
@@ -25,7 +25,7 @@ pub fn authenticate_policy(
         return Err(PolicyError::InvalidParameter);
     };
 
-    verify_policy(
+    verify_policy_with_collateral(
         is_src,
         policy,
         verified_report_local,
@@ -33,4 +33,5 @@ pub fn authenticate_policy(
         verified_report_peer,
         event_log_peer,
     )
+    .map(|(result, _collateral)| result)
 }

@@ -85,6 +85,19 @@ pub fn main() {
 
     // Measure the policy and Root CA data
     do_measurements();
+    
+    // Initialize attestation collateral from policy data (after measurements)
+    #[cfg(not(feature = "test_disable_ra_and_accept_all"))]
+    {
+        use crate::config::get_policy;
+        if let Some(policy_data) = get_policy() {
+            if !attestation::init_collateral_from_policy(policy_data) {
+                log::warn!("Failed to initialize collateral from policy data, continuing with hardcoded fallback");
+            }
+        } else {
+            log::warn!("No policy data available for collateral initialization, continuing with hardcoded fallback");
+        }
+    }
       
     // Parse command-line arguments for AzCVMEmu mode
     if let Some(mig_info) = parse_commandline_args() {
