@@ -6,7 +6,7 @@
 set -e  # Exit on any error
 
 # Default configuration
-DEFAULT_POLICY_FILE="./config/policy.json"
+DEFAULT_POLICY_FILE="./config/policy.toml"
 DEFAULT_ROOT_CA_FILE="./config/Intel_SGX_Provisioning_Certification_RootCA.cer"
 DEFAULT_ROLE="source"
 DEFAULT_REQUEST_ID="1"

@@ -12,6 +12,8 @@ policy = {path = "../policy"}
 spin = "0.9.2"
 tdx-tdcall = { path = "../../deps/td-shim/tdx-tdcall"}
 td-payload = { path = "../../deps/td-shim/td-payload", features = ["tdx"] }
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
 
 [features]
 default = []

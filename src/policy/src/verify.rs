@@ -14,8 +14,8 @@ use td_shim::event_log::{
 };
 
 use crate::{
-    config::{MigPolicy, Property},
-    format_bytes_hex, MigTdInfo, PlatformInfo, Policy, PolicyError, QeInfo,
+    config::{MigPolicy, MigPolicyWithCollateral, Property, Platform, QeIdentity, TdInfo},
+    format_bytes_hex, Policy, PolicyError,
 };
 
 const REPORT_DATA_SIZE: usize = 734;
@@ -320,6 +320,97 @@ impl From<&str> for EventName {
     }
 }
 
+/// Verify policy with optional collateral data extraction from TOML format
+/// Returns (verification_result, collateral_config_if_present)
+pub fn verify_policy_with_collateral(
+    is_src: bool,
+    policy: &[u8],
+    report: &[u8],
+    event_log: &[u8],
+    report_peer: &[u8],
+    event_log_peer: &[u8],
+) -> Result<((), Option<crate::config::CollateralConfig>), PolicyError> {
+    if report.len() < REPORT_DATA_SIZE || report_peer.len() < REPORT_DATA_SIZE {
+        return Err(PolicyError::InvalidParameter);
+    }
+
+    let input = core::str::from_utf8(policy);
+    let policy_str = match input {
+        Ok(s) => s.trim_matches(char::from(0)),
+        Err(_) => return Err(PolicyError::InvalidPolicy),
+    };
+
+    // Try parsing as TOML with collateral first
+    if let Ok(policy_with_collateral) = crate::config::MigPolicyWithCollateral::from_toml(policy_str) {
+        let policy = policy_with_collateral.get_policy();
+        let collateral = policy_with_collateral.get_collateral().cloned();
+        
+        let report_local = Report::new(report)?;
+        let report_peer = Report::new(report_peer)?;
+
+        verify_reports(is_src, &policy, &report_local, event_log, &report_peer, event_log_peer)?;
+        
+        return Ok(((), collateral));
+    }
+
+    // Fallback to regular JSON/TOML policy verification
+    let policy = match crate::config::MigPolicy::from_str(policy_str) {
+        Ok(policy) => policy,
+        Err(_) => return Err(PolicyError::InvalidPolicy),
+    };
+
+    let report_local = Report::new(report)?;
+    let report_peer = Report::new(report_peer)?;
+
+    verify_reports(is_src, &policy, &report_local, event_log, &report_peer, event_log_peer)?;
+    
+    Ok(((), None))
+}
+
+/// Internal function to perform the actual verification logic
+fn verify_reports(
+    is_src: bool,
+    policy: &crate::config::MigPolicy,
+    report_local: &Report,
+    event_log: &[u8],
+    report_peer: &Report,
+    event_log_peer: &[u8],
+) -> Result<(), PolicyError> {
+    // There might be multiple supported platforms, filter out all the
+    // platform info blocks.
+    let platform_info: Vec<(&str, &Platform)> = policy
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            crate::Policy::Platform { fmspc, platform } => Some((fmspc.as_str(), platform)),
+            _ => None,
+        })
+        .collect();
+    verify_platform_info(is_src, platform_info, report_local, report_peer)?;
+
+    // There might be multiple supported TDX Modules, filter out all the
+    // TDX Modules info blocks.
+    verify_tdx_module_info(is_src, policy, report_local, report_peer)?;
+
+    for block in &policy.blocks {
+        match block {
+            crate::Policy::Platform { .. } => continue,
+            crate::Policy::Qe { qe_identity } => verify_qe_info(is_src, qe_identity, report_local, report_peer)?,
+            crate::Policy::TdxModule { .. } => continue,
+            crate::Policy::Migtd { migtd } => verify_migtd_info(
+                is_src,
+                migtd,
+                event_log,
+                event_log_peer,
+                report_local,
+                report_peer,
+            )?,
+        }
+    }
+
+    Ok(())
+}
+
 pub fn verify_policy(
     is_src: bool,
     policy: &[u8],
@@ -340,7 +431,7 @@ pub fn verify_policy(
         Err(_) => return Err(PolicyError::InvalidPolicy),
     };
 
-    let policy = match serde_json::from_str::<MigPolicy>(policy) {
+    let policy = match MigPolicy::from_str(policy) {
         Ok(policy) => policy,
         Err(_) => return Err(PolicyError::InvalidPolicy),
     };
@@ -348,44 +439,12 @@ pub fn verify_policy(
     let report_local = Report::new(report)?;
     let report_peer = Report::new(report_peer)?;
 
-    // There might be multiple supported platforms, filter out all the
-    // platform info blocks.
-    let platform_info: Vec<&crate::PlatformInfo> = policy
-        .blocks
-        .iter()
-        .filter_map(|block| match block {
-            crate::Policy::Platform(p) => Some(p),
-            _ => None,
-        })
-        .collect();
-    verify_platform_info(is_src, platform_info, &report_local, &report_peer)?;
-
-    // There might be multiple supported TDX Modules, filter out all the
-    // TDX Modules info blocks.
-    verify_tdx_module_info(is_src, &policy, &report_local, &report_peer)?;
-
-    for block in policy.blocks {
-        match block {
-            crate::Policy::Platform(_) => continue,
-            crate::Policy::Qe(q) => verify_qe_info(is_src, &q, &report_local, &report_peer)?,
-            crate::Policy::TdxModule(_) => continue,
-            crate::Policy::Migtd(m) => verify_migtd_info(
-                is_src,
-                &m,
-                event_log,
-                event_log_peer,
-                &report_local,
-                &report_peer,
-            )?,
-        }
-    }
-
-    Ok(())
+    verify_reports(is_src, &policy, &report_local, event_log, &report_peer, event_log_peer)
 }
 
 fn verify_platform_info(
     is_src: bool,
-    policy: Vec<&PlatformInfo>,
+    policy: Vec<(&str, &Platform)>,
     local_report: &Report,
     peer_report: &Report,
 ) -> Result<(), PolicyError> {
@@ -394,7 +453,7 @@ fn verify_platform_info(
     let peer_fmspc =
         format_bytes_hex(peer_report.get_platform_info_property(&PlatformInfoProperty::Fmspc)?);
 
-    let target_platform = if policy.len() == 1 && policy[0].fmspc.as_str() == "self" {
+    let target_platform = if policy.len() == 1 && policy[0].0 == "self" {
         if local_fmspc != peer_fmspc {
             return Err(PolicyError::PlatformNotMatch(local_fmspc, peer_fmspc));
         }
@@ -402,11 +461,11 @@ fn verify_platform_info(
     } else {
         policy
             .iter()
-            .find(|p| p.fmspc == peer_fmspc)
+            .find(|p| p.0 == peer_fmspc)
             .ok_or(PolicyError::PlatformNotFound(peer_fmspc.clone()))?
     };
 
-    for (name, action) in &target_platform.platform.tcb_info {
+    for (name, action) in &target_platform.1.tcb_info {
         let property = PlatformInfoProperty::from(name.as_str());
         let local = local_report.get_platform_info_property(&property)?;
         let remote = peer_report.get_platform_info_property(&property)?;
@@ -431,11 +490,11 @@ fn verify_platform_info(
 
 fn verify_qe_info(
     is_src: bool,
-    policy: &QeInfo,
+    policy: &QeIdentity,
     local_report: &Report,
     peer_report: &Report,
 ) -> Result<(), PolicyError> {
-    for (name, action) in &policy.qe_identity.qe_identity {
+    for (name, action) in &policy.qe_identity {
         let property = QeInfoProperty::from(name.as_str());
         let local = local_report.get_qe_info_property(&property)?;
         let remote = peer_report.get_qe_info_property(&property)?;
@@ -461,9 +520,9 @@ fn verify_tdx_module_info(
 
     for block in &policy.blocks {
         match block {
-            Policy::TdxModule(t) => {
+            Policy::TdxModule { tdx_module } => {
                 verify_result = true;
-                for (name, action) in &t.tdx_module.tdx_module_identity {
+                for (name, action) in &tdx_module.tdx_module_identity {
                     let property = TdxModuleInfoProperty::from(name.as_str());
                     let local = local_report.get_tdx_module_info_property(&property)?;
                     let remote = peer_report.get_tdx_module_info_property(&property)?;
@@ -487,8 +546,8 @@ fn verify_tdx_module_info(
         #[cfg(feature = "log")]
         for block in &policy.blocks {
             match block {
-                Policy::TdxModule(t) => {
-                    for (name, action) in &t.tdx_module.tdx_module_identity {
+                Policy::TdxModule { tdx_module } => {
+                    for (name, action) in &tdx_module.tdx_module_identity {
                         let property = TdxModuleInfoProperty::from(name.as_str());
                         let local = local_report.get_tdx_module_info_property(&property)?;
                         let remote = peer_report.get_tdx_module_info_property(&property)?;
@@ -506,7 +565,7 @@ fn verify_tdx_module_info(
 
 fn verify_migtd_info(
     is_src: bool,
-    policy: &MigTdInfo,
+    policy: &TdInfo,
     event_log_local: &[u8],
     event_log_peer: &[u8],
     local_report: &Report,
@@ -515,7 +574,7 @@ fn verify_migtd_info(
     let mut masked_local = [0u8; 8];
     let mut masked_remote = [0u8; 8];
 
-    for (name, action) in &policy.migtd.td_info {
+    for (name, action) in &policy.td_info {
         let property = MigTdInfoProperty::from(name.as_str());
         let local = local_report.get_migtd_info_property(&property)?;
         let remote = peer_report.get_migtd_info_property(&property)?;
@@ -547,7 +606,7 @@ fn verify_migtd_info(
         }
     }
 
-    if let Some(event_log_policy) = &policy.migtd.event_log {
+    if let Some(event_log_policy) = &policy.event_log {
         verify_event_log(
             is_src,
             event_log_policy,
@@ -1392,7 +1451,6 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .migtd
             .event_log
             .as_ref()
             .unwrap();
@@ -1430,7 +1488,6 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .migtd
             .event_log
             .as_ref()
             .unwrap();
@@ -1473,7 +1530,6 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .migtd
             .event_log
             .as_ref()
             .unwrap();
@@ -1507,7 +1563,6 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .migtd
             .event_log
             .as_ref()
             .unwrap();
@@ -1550,7 +1605,6 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .migtd
             .event_log
             .as_ref()
             .unwrap();
@@ -1593,7 +1647,6 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .migtd
             .event_log
             .as_ref()
             .unwrap();
