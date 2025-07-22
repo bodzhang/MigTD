@@ -14,7 +14,7 @@ use td_shim::event_log::{
 };
 
 use crate::{
-    config::{MigPolicy, MigPolicyWithCollateral, Property, Platform, QeIdentity, TdInfo},
+    config::{MigPolicy, MigPolicyWithCollateral, CollateralConfig, Property, Platform, QeIdentity, TdInfo},
     format_bytes_hex, Policy, PolicyError,
 };
 
@@ -329,7 +329,7 @@ pub fn verify_policy_with_collateral(
     event_log: &[u8],
     report_peer: &[u8],
     event_log_peer: &[u8],
-) -> Result<((), Option<crate::config::CollateralConfig>), PolicyError> {
+) -> Result<((), Option<CollateralConfig>), PolicyError> {
     if report.len() < REPORT_DATA_SIZE || report_peer.len() < REPORT_DATA_SIZE {
         return Err(PolicyError::InvalidParameter);
     }
@@ -382,7 +382,7 @@ fn verify_reports(
         .blocks
         .iter()
         .filter_map(|block| match block {
-            crate::Policy::Platform { fmspc, platform } => Some((fmspc.as_str(), platform)),
+            crate::Policy::Platform(platform_info) => Some((platform_info.fmspc.as_str(), &platform_info.platform)),
             _ => None,
         })
         .collect();
@@ -395,11 +395,11 @@ fn verify_reports(
     for block in &policy.blocks {
         match block {
             crate::Policy::Platform { .. } => continue,
-            crate::Policy::Qe { qe_identity } => verify_qe_info(is_src, qe_identity, report_local, report_peer)?,
+            crate::Policy::Qe(qe_info) => verify_qe_info(is_src, &qe_info.qe_identity, report_local, report_peer)?,
             crate::Policy::TdxModule { .. } => continue,
-            crate::Policy::Migtd { migtd } => verify_migtd_info(
+            crate::Policy::Migtd(migtd_info) => verify_migtd_info(
                 is_src,
-                migtd,
+                &migtd_info.migtd,
                 event_log,
                 event_log_peer,
                 report_local,
@@ -520,9 +520,9 @@ fn verify_tdx_module_info(
 
     for block in &policy.blocks {
         match block {
-            Policy::TdxModule { tdx_module } => {
+            Policy::TdxModule(tdx_module_info) => {
                 verify_result = true;
-                for (name, action) in &tdx_module.tdx_module_identity {
+                for (name, action) in &tdx_module_info.tdx_module.tdx_module_identity {
                     let property = TdxModuleInfoProperty::from(name.as_str());
                     let local = local_report.get_tdx_module_info_property(&property)?;
                     let remote = peer_report.get_tdx_module_info_property(&property)?;
@@ -546,8 +546,8 @@ fn verify_tdx_module_info(
         #[cfg(feature = "log")]
         for block in &policy.blocks {
             match block {
-                Policy::TdxModule { tdx_module } => {
-                    for (name, action) in &tdx_module.tdx_module_identity {
+                Policy::TdxModule(tdx_module_info) => {
+                    for (name, action) in &tdx_module_info.tdx_module.tdx_module_identity {
                         let property = TdxModuleInfoProperty::from(name.as_str());
                         let local = local_report.get_tdx_module_info_property(&property)?;
                         let remote = peer_report.get_tdx_module_info_property(&property)?;
@@ -1573,7 +1573,7 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .event_log
+            .migtd.event_log
             .as_ref()
             .unwrap();
         let local_events = parse_events(&event_log).unwrap();
@@ -1609,7 +1609,7 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .event_log
+            .migtd.event_log
             .as_ref()
             .unwrap();
 
@@ -1650,7 +1650,7 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .event_log
+            .migtd.event_log
             .as_ref()
             .unwrap();
 
@@ -1682,7 +1682,7 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .event_log
+            .migtd.event_log
             .as_ref()
             .unwrap();
 
@@ -1726,7 +1726,7 @@ mod tests {
             let event_log_policy = policy
                 .get_migtd_info_policy()
                 .unwrap()
-                .event_log
+                .migtd.event_log
                 .as_ref()
                 .unwrap();
 
@@ -1768,7 +1768,7 @@ mod tests {
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
-            .event_log
+            .migtd.event_log
             .as_ref()
             .unwrap();
 
