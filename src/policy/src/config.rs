@@ -158,7 +158,7 @@ pub enum Policy {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct PlatformInfo {
-    pub fmspc: String,
+    pub(crate) fmspc: String,
     #[serde(rename = "Platform")]
     pub(crate) platform: Platform,
 }
@@ -210,7 +210,7 @@ pub(crate) struct TdInfo {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct Property {
+pub(crate) struct Property {
     pub(crate) operation: Operation,
     pub(crate) reference: Reference,
 }
@@ -327,8 +327,8 @@ impl<'de> Deserialize<'de> for Operation {
     where
         D: Deserializer<'de>,
     {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        match s.as_str() {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        match s {
             "equal" => Ok(Operation::Equal),
             "greater-or-equal" => Ok(Operation::GreaterOrEqual),
             "subset" => Ok(Operation::Subset),
