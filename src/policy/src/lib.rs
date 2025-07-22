@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 
-#![cfg_attr(not(any(test, feature = "AzCVMEmu")), no_std)]
+#![cfg_attr(not(feature = "AzCVMEmu"), no_std)]
 extern crate alloc;
 
 mod config;
