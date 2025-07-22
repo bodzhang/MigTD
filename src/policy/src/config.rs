@@ -1080,8 +1080,8 @@ policy = [
     #[test]
     fn test_complex_policy_toml() {
         // Test the actual complex policy.toml file from the config directory
-        let complex_toml = include_str!("../../../config/policy.toml");
-        
+        let complex_toml = include_str!("../../../config/policy_with_collateral.toml");
+
         // First, let's verify what we're actually reading
         println!("=== Verifying policy.toml content ===");
         let first_lines: Vec<&str> = complex_toml.lines().take(10).collect();

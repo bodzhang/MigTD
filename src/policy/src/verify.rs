@@ -836,9 +836,124 @@ mod tests {
         Ok(())
     }
 
+    /// Helper function to test both JSON and TOML versions of a policy file
+    fn test_policy_both_formats(
+        base_name: &str,
+        test_fn: impl Fn(&[u8]) + Copy,
+    ) {
+        // Test JSON version
+        let json_bytes: &[u8] = match base_name {
+            "policy" => include_bytes!("../test/policy.json"),
+            "policy_001" => include_bytes!("../test/policy_001.json"),
+            "policy_002" => include_bytes!("../test/policy_002.json"),
+            "policy_003" => include_bytes!("../test/policy_003.json"),
+            "policy_004" => include_bytes!("../test/policy_004.json"),
+            "policy_005" => include_bytes!("../test/policy_005.json"),
+            "policy_006" => include_bytes!("../test/policy_006.json"),
+            "policy_007" => include_bytes!("../test/policy_007.json"),
+            "policy_008" => include_bytes!("../test/policy_008.json"),
+            "policy_009" => include_bytes!("../test/policy_009.json"),
+            "policy_010" => include_bytes!("../test/policy_010.json"),
+            "policy_full1" => include_bytes!("../test/policy_full1.json"),
+            "policy_full2" => include_bytes!("../test/policy_full2.json"),
+            "policy_full3" => include_bytes!("../test/policy_full3.json"),
+            "policy_no" => include_bytes!("../test/policy_no.json"),
+            "policy_no_tdattr" => include_bytes!("../test/policy_no_tdattr.json"),
+            "policy_invalid_guid" => include_bytes!("../test/policy_invalid_guid.json"),
+            _ => panic!("Unknown policy file: {}", base_name),
+        };
+        
+        // Test TOML version (if it exists)
+        let toml_bytes: Option<&[u8]> = match base_name {
+            "policy" => Some(include_bytes!("../test/policy.toml")),
+            "policy_001" => Some(include_bytes!("../test/policy_001.toml")),
+            "policy_002" => Some(include_bytes!("../test/policy_002.toml")),
+            "policy_003" => Some(include_bytes!("../test/policy_003.toml")),
+            "policy_004" => Some(include_bytes!("../test/policy_004.toml")),
+            "policy_005" => Some(include_bytes!("../test/policy_005.toml")),
+            "policy_006" => Some(include_bytes!("../test/policy_006.toml")),
+            "policy_007" => Some(include_bytes!("../test/policy_007.toml")),
+            "policy_008" => Some(include_bytes!("../test/policy_008.toml")),
+            "policy_010" => Some(include_bytes!("../test/policy_010.toml")),
+            "policy_full1" => Some(include_bytes!("../test/policy_full1.toml")),
+            "policy_full2" => Some(include_bytes!("../test/policy_full2.toml")),
+            "policy_full3" => Some(include_bytes!("../test/policy_full3.toml")),
+            "policy_no" => Some(include_bytes!("../test/policy_no.toml")),
+            "policy_no_tdattr" => Some(include_bytes!("../test/policy_no_tdattr.toml")),
+            "policy_009" => Some(include_bytes!("../test/policy_009.toml")), // This should fail
+            "policy_invalid_guid" => Some(include_bytes!("../test/policy_invalid_guid.toml")), // This should fail
+            _ => None,
+        };
+
+        // Test JSON version
+        test_fn(json_bytes);
+        
+        // Test TOML version if available
+        if let Some(toml_data) = toml_bytes {
+            test_fn(toml_data);
+        }
+    }
+
+    /// Helper function to test both JSON and TOML versions of a policy file with string content
+    fn test_policy_both_formats_str(
+        base_name: &str,
+        test_fn: impl Fn(&str) + Copy,
+    ) {
+        // Test JSON version
+        let json_str: &str = match base_name {
+            "policy" => include_str!("../test/policy.json"),
+            "policy_001" => include_str!("../test/policy_001.json"),
+            "policy_002" => include_str!("../test/policy_002.json"),
+            "policy_003" => include_str!("../test/policy_003.json"),
+            "policy_004" => include_str!("../test/policy_004.json"),
+            "policy_005" => include_str!("../test/policy_005.json"),
+            "policy_006" => include_str!("../test/policy_006.json"),
+            "policy_007" => include_str!("../test/policy_007.json"),
+            "policy_008" => include_str!("../test/policy_008.json"),
+            "policy_009" => include_str!("../test/policy_009.json"),
+            "policy_010" => include_str!("../test/policy_010.json"),
+            "policy_full1" => include_str!("../test/policy_full1.json"),
+            "policy_full2" => include_str!("../test/policy_full2.json"),
+            "policy_full3" => include_str!("../test/policy_full3.json"),
+            "policy_no" => include_str!("../test/policy_no.json"),
+            "policy_no_tdattr" => include_str!("../test/policy_no_tdattr.json"),
+            "policy_invalid_guid" => include_str!("../test/policy_invalid_guid.json"),
+            _ => panic!("Unknown policy file: {}", base_name),
+        };
+        
+        // Test TOML version (if it exists)
+        let toml_str: Option<&str> = match base_name {
+            "policy" => Some(include_str!("../test/policy.toml")),
+            "policy_001" => Some(include_str!("../test/policy_001.toml")),
+            "policy_002" => Some(include_str!("../test/policy_002.toml")),
+            "policy_003" => Some(include_str!("../test/policy_003.toml")),
+            "policy_004" => Some(include_str!("../test/policy_004.toml")),
+            "policy_005" => Some(include_str!("../test/policy_005.toml")),
+            "policy_006" => Some(include_str!("../test/policy_006.toml")),
+            "policy_007" => Some(include_str!("../test/policy_007.toml")),
+            "policy_008" => Some(include_str!("../test/policy_008.toml")),
+            "policy_010" => Some(include_str!("../test/policy_010.toml")),
+            "policy_full1" => Some(include_str!("../test/policy_full1.toml")),
+            "policy_full2" => Some(include_str!("../test/policy_full2.toml")),
+            "policy_full3" => Some(include_str!("../test/policy_full3.toml")),
+            "policy_no" => Some(include_str!("../test/policy_no.toml")),
+            "policy_no_tdattr" => Some(include_str!("../test/policy_no_tdattr.toml")),
+            "policy_009" => Some(include_str!("../test/policy_009.toml")), // This should fail
+            "policy_invalid_guid" => Some(include_str!("../test/policy_invalid_guid.toml")), // This should fail
+            _ => None,
+        };
+
+        // Test JSON version
+        test_fn(json_str);
+        
+        // Test TOML version if available
+        if let Some(toml_data) = toml_str {
+            test_fn(toml_data);
+        }
+    }
+
     #[test]
-    fn test_verify_invalid_parameter() {
-        let policy_bytes = include_bytes!("../test/policy.json");
+    fn test_verify_invalid_parameter() { test_policy_both_formats("policy", |policy_bytes| {
         let verify_result = verify_policy(
             true,
             policy_bytes,
@@ -858,121 +973,124 @@ mod tests {
             &[0u8; 8],
         );
         assert!(matches!(verify_result, Err(PolicyError::InvalidParameter)));
-    }
+    }); }
 
     #[test]
     fn test_verify_with_platform_info_comp() {
         let template = include_bytes!("../test/report.dat");
 
         // Take `self` as reference
-        let policy_bytes = include_bytes!("../test/policy_001.json");
-        let verify_result =
-            verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
-        assert!(verify_result.is_ok());
+        test_policy_both_formats("policy_001", |policy_bytes| {
+            let verify_result =
+                verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
+            assert!(verify_result.is_ok());
 
-        // Only same platform is allowed
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_FMSPC].copy_from_slice(&[0x20, 0xC0, 0x6F, 0, 0, 0]);
+            // Only same platform is allowed
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_FMSPC].copy_from_slice(&[0x20, 0xC0, 0x6F, 0, 0, 0]);
 
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::PlatformNotMatch(_, _))
-        ));
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::PlatformNotMatch(_, _))
+            ));
+        });
 
-        let policy_bytes = include_bytes!("../test/policy_full1.json");
-        let verify_result =
-            verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
-        assert!(verify_result.is_ok());
+        test_policy_both_formats("policy_full1", |policy_bytes| {
+            let verify_result =
+                verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
+            assert!(verify_result.is_ok());
 
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_FMSPC].copy_from_slice(&[0x30, 0x81, 0x6F, 0, 0, 0]);
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_FMSPC].copy_from_slice(&[0x30, 0x81, 0x6F, 0, 0, 0]);
 
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::PlatformNotFound(_))
-        ));
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::PlatformNotFound(_))
+            ));
 
-        // peer's tdx tcb level lower than reference
-        let mut report_peer = template.to_vec();
-        let low_tdx_tcb = &[0u8; 16];
-        report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(low_tdx_tcb);
+            // peer's tdx tcb level lower than reference
+            let mut report_peer = template.to_vec();
+            let low_tdx_tcb = &[0u8; 16];
+            report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(low_tdx_tcb);
 
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::UnqulifiedPlatformInfo)
-        ));
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::UnqulifiedPlatformInfo)
+            ));
 
-        // dst's tdx tcb level is higher than reference
-        let high_tdx_tcb = &[0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(high_tdx_tcb);
+            // dst's tdx tcb level is higher than reference
+            let high_tdx_tcb = &[0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(high_tdx_tcb);
 
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(verify_result.is_ok());
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(verify_result.is_ok());
+        });
 
         // Take self as reference
-        let policy_bytes = include_bytes!("../test/policy_full3.json");
-        let mut report = template.to_vec();
-        let mut report_peer = template.to_vec();
+        test_policy_both_formats("policy_full3", |policy_bytes| {
+            let mut report = template.to_vec();
+            let mut report_peer = template.to_vec();
 
-        // dst's tdx tcb level is higher than self
-        report[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[1u8; 16]);
-        report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[2u8; 16]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            &report,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(verify_result.is_ok());
+            // dst's tdx tcb level is higher than self
+            report[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[1u8; 16]);
+            report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[2u8; 16]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                &report,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(verify_result.is_ok());
 
-        // dst's svn is smaller than self
-        report[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[2u8; 16]);
-        report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[1u8; 16]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            &report,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::UnqulifiedPlatformInfo)
-        ));
+            // dst's svn is smaller than self
+            report[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[2u8; 16]);
+            report_peer[Report::R_TDX_TCB_COMPONENTS].copy_from_slice(&[1u8; 16]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                &report,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::UnqulifiedPlatformInfo)
+            ));
+        });
     }
 
     #[test]
@@ -980,110 +1098,112 @@ mod tests {
         let template = include_bytes!("../test/report.dat");
 
         // Taking `self` as reference: pass
-        let policy_bytes = include_bytes!("../test/policy_001.json");
-        let verify_result =
-            verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
-        assert!(verify_result.is_ok());
+        test_policy_both_formats("policy_001", |policy_bytes| {
+            let verify_result =
+                verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
+            assert!(verify_result.is_ok());
 
-        // Taking `self` as reference: mismatch tdx module major version
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_TDX_MODULE_MAJOR_VER].copy_from_slice(&[2]);
+            // Taking `self` as reference: mismatch tdx module major version
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_TDX_MODULE_MAJOR_VER].copy_from_slice(&[2]);
 
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::UnqulifiedTdxModuleInfo)
-        ));
-
-        // Taking exact value as reference: pass
-        let policy_bytes = include_bytes!("../test/policy_full1.json");
-        let verify_result =
-            verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
-        assert!(verify_result.is_ok());
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::UnqulifiedTdxModuleInfo)
+            ));
+        });
 
         // Taking exact value as reference: pass
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_TDX_MODULE_MAJOR_VER].copy_from_slice(&[2]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(verify_result.is_ok());
+        test_policy_both_formats("policy_full1", |policy_bytes| {
+            let verify_result =
+                verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
+            assert!(verify_result.is_ok());
 
-        // Taking exact value as reference: mismatch tdx module major version
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_TDX_MODULE_MAJOR_VER].copy_from_slice(&[0]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::UnqulifiedTdxModuleInfo)
-        ));
+            // Taking exact value as reference: pass
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_TDX_MODULE_MAJOR_VER].copy_from_slice(&[2]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(verify_result.is_ok());
 
-        // Taking exact value as reference: mismatch tdx module svn
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_TDX_MODULE_SVN].copy_from_slice(&[1]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::UnqulifiedTdxModuleInfo)
-        ));
+            // Taking exact value as reference: mismatch tdx module major version
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_TDX_MODULE_MAJOR_VER].copy_from_slice(&[0]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::UnqulifiedTdxModuleInfo)
+            ));
 
-        // Taking exact value as reference: mismatch mrsignerseam
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_MRSEAMSIGNER].copy_from_slice(&[0xfeu8; 48]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::UnqulifiedTdxModuleInfo)
-        ));
+            // Taking exact value as reference: mismatch tdx module svn
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_TDX_MODULE_SVN].copy_from_slice(&[1]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::UnqulifiedTdxModuleInfo)
+            ));
 
-        // Taking exact value as reference: mismatch attributes
-        let mut report_peer = template.to_vec();
-        report_peer[Report::R_ATTR_SEAM].copy_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(matches!(
-            verify_result,
-            Err(PolicyError::UnqulifiedTdxModuleInfo)
-        ));
+            // Taking exact value as reference: mismatch mrsignerseam
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_MRSEAMSIGNER].copy_from_slice(&[0xfeu8; 48]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::UnqulifiedTdxModuleInfo)
+            ));
+
+            // Taking exact value as reference: mismatch attributes
+            let mut report_peer = template.to_vec();
+            report_peer[Report::R_ATTR_SEAM].copy_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(matches!(
+                verify_result,
+                Err(PolicyError::UnqulifiedTdxModuleInfo)
+            ));
+        });
     }
 
     // Different MRTD value, no MRTD policy in policy data
@@ -1091,29 +1211,32 @@ mod tests {
     fn test_verify_migtdinfo_comp() {
         let template = include_bytes!("../test/report.dat");
 
-        let policy_bytes = include_bytes!("../test/policy_no.json");
-        let verify_result =
-            verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
-        assert!(verify_result.is_ok());
+        test_policy_both_formats("policy_no", |policy_bytes| {
+            let verify_result =
+                verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
+            assert!(verify_result.is_ok());
+        });
 
         // different attributes, not equal, but attributes is not in policy
-        let policy_bytes = include_bytes!("../test/policy_no_tdattr.json");
-        let mut report_peer = template.to_vec();
+        test_policy_both_formats("policy_no_tdattr", |policy_bytes| {
+            let mut report_peer = template.to_vec();
 
-        report_peer[Report::R_ATTR_TD].copy_from_slice(&[1u8; 8]);
-        let verify_result = verify_policy(
-            true,
-            policy_bytes,
-            template,
-            &[0u8; 8],
-            &report_peer,
-            &[0u8; 8],
-        );
-        assert!(verify_result.is_ok());
+            report_peer[Report::R_ATTR_TD].copy_from_slice(&[1u8; 8]);
+            let verify_result = verify_policy(
+                true,
+                policy_bytes,
+                template,
+                &[0u8; 8],
+                &report_peer,
+                &[0u8; 8],
+            );
+            assert!(verify_result.is_ok());
+        });
 
-        let policy_bytes = include_bytes!("../test/policy_full1.json");
-        // different attributes, not equal
-        report_peer[Report::R_ATTR_TD].copy_from_slice(&[1u8; 8]);
+        test_policy_both_formats("policy_full1", |policy_bytes| {
+            let mut report_peer = template.to_vec();
+            // different attributes, not equal
+            report_peer[Report::R_ATTR_TD].copy_from_slice(&[1u8; 8]);
 
         let verify_result = verify_policy(
             true,
@@ -1334,13 +1457,13 @@ mod tests {
             verify_result,
             Err(PolicyError::UnqulifiedMigTdInfo)
         ));
+        });
     }
 
     #[test]
-    fn test_verify_eventlog_comp() {
+    fn test_verify_eventlog_comp() { test_policy_both_formats("policy_full2", |policy_bytes| {
         let template = include_bytes!("../test/report.dat");
 
-        let policy_bytes = include_bytes!("../test/policy_full2.json");
         // Invalid event log
         let verify_result =
             verify_policy(true, policy_bytes, template, &[0u8; 8], template, &[0u8; 8]);
@@ -1369,7 +1492,7 @@ mod tests {
 
         let verify_result = verify_policy(true, policy_bytes, template, &evt1, template, &evt1);
         assert!(matches!(verify_result, Err(PolicyError::InvalidEventLog)));
-    }
+    }); }
 
     fn create_event_log(
         payload: &[u8],
@@ -1433,9 +1556,8 @@ mod tests {
     }
 
     #[test]
-    fn test_eventlogpolicy_verify() {
+    fn test_eventlogpolicy_verify() { test_policy_both_formats_str("policy_full2", |policy| {
         let payload = vec![0xffu8; 256];
-        let policy = include_str!("../test/policy_full2.json");
         let trust_anchor = vec![0xffu8; 128];
         let svn = u64::to_le_bytes(0xf);
         let root_key = vec![0xffu8; 96];
@@ -1447,7 +1569,7 @@ mod tests {
             policy.as_bytes(),
             root_key.as_slice(),
         );
-        let policy = serde_json::from_str::<MigPolicy>(policy).unwrap();
+        let policy = MigPolicy::from_str(policy).unwrap();
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
@@ -1457,12 +1579,11 @@ mod tests {
         let local_events = parse_events(&event_log).unwrap();
 
         assert!(verify_events(true, &event_log_policy, &local_events, &local_events).is_ok());
-    }
+    }); }
 
     #[test]
-    fn test_eventlogpolicy_verify_mismatch_payload() {
+    fn test_eventlogpolicy_verify_mismatch_payload() { test_policy_both_formats_str("policy", |policy| {
         let payload = vec![0xffu8; 1024];
-        let policy = include_str!("../test/policy.json");
         let trust_anchor = vec![0xffu8; 128];
         let svn = u64::to_le_bytes(0xf);
         let root_key = vec![0xffu8; 96];
@@ -1484,7 +1605,7 @@ mod tests {
             root_key.as_slice(),
         );
 
-        let policy = serde_json::from_str::<MigPolicy>(policy).unwrap();
+        let policy = MigPolicy::from_str(policy).unwrap();
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
@@ -1499,12 +1620,11 @@ mod tests {
             &parse_events(&peer_events).unwrap(),
         )
         .is_err());
-    }
+    }); }
 
     #[test]
-    fn test_eventlogpolicy_verify_mismatch_trust_anchor() {
+    fn test_eventlogpolicy_verify_mismatch_trust_anchor() { test_policy_both_formats_str("policy_full2", |policy| {
         let payload = vec![0xffu8; 1024];
-        let policy = include_str!("../test/policy_full2.json");
         let trust_anchor = vec![0xffu8; 128];
         let svn = u64::to_le_bytes(0xf);
         let root_key = vec![0xffu8; 96];
@@ -1526,7 +1646,7 @@ mod tests {
             root_key.as_slice(),
         );
 
-        let policy = serde_json::from_str::<MigPolicy>(policy).unwrap();
+        let policy = MigPolicy::from_str(policy).unwrap();
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
@@ -1541,12 +1661,11 @@ mod tests {
             &parse_events(&peer_events).unwrap(),
         )
         .is_err());
-    }
+    }); }
 
     #[test]
-    fn test_eventlogpolicy_verify_mismatch_svn() {
+    fn test_eventlogpolicy_verify_mismatch_svn() { test_policy_both_formats_str("policy_full2", |policy| {
         let payload = vec![0xffu8; 1024];
-        let policy = include_str!("../test/policy_full2.json");
         let trust_anchor = vec![0xffu8; 128];
         let svn = u64::to_le_bytes(0x20);
         let root_key = vec![0xffu8; 96];
@@ -1559,7 +1678,7 @@ mod tests {
             root_key.as_slice(),
         );
 
-        let policy = serde_json::from_str::<MigPolicy>(policy).unwrap();
+        let policy = MigPolicy::from_str(policy).unwrap();
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
@@ -1574,54 +1693,56 @@ mod tests {
             &parse_events(&local_events).unwrap(),
         )
         .is_err());
-    }
+    }); }
 
     #[test]
     fn test_eventlogpolicy_verify_mismatch_policy() {
         let payload: Vec<u8> = vec![0xffu8; 1024];
-        let policy = include_str!("../test/policy_full2.json");
         let trust_anchor = vec![0xffu8; 128];
         let svn = u64::to_le_bytes(0xf);
         let root_key = vec![0xffu8; 96];
 
-        let local_events = create_event_log(
-            payload.as_slice(),
-            Some(trust_anchor.as_slice()),
-            Some(svn.as_slice()),
-            policy.as_bytes(),
-            root_key.as_slice(),
-        );
+        // Test policy_full2 in both formats with policy_invalid_guid.json as peer
+        test_policy_both_formats_str("policy_full2", |policy_str| {
+            let policy_peer = include_bytes!("../test/policy_invalid_guid.json");
 
-        let policy_peer = include_bytes!("../test/policy_invalid_guid.json");
-        let peer_events = create_event_log(
-            payload.as_slice(),
-            Some(trust_anchor.as_slice()),
-            Some(svn.as_slice()),
-            policy_peer,
-            root_key.as_slice(),
-        );
+            let local_events = create_event_log(
+                payload.as_slice(),
+                Some(trust_anchor.as_slice()),
+                Some(svn.as_slice()),
+                policy_str.as_bytes(),
+                root_key.as_slice(),
+            );
 
-        let policy = serde_json::from_str::<MigPolicy>(policy).unwrap();
-        let event_log_policy = policy
-            .get_migtd_info_policy()
-            .unwrap()
-            .event_log
-            .as_ref()
-            .unwrap();
+            let peer_events = create_event_log(
+                payload.as_slice(),
+                Some(trust_anchor.as_slice()),
+                Some(svn.as_slice()),
+                policy_peer,
+                root_key.as_slice(),
+            );
 
-        assert!(verify_events(
-            true,
-            &event_log_policy,
-            &parse_events(&local_events).unwrap(),
-            &parse_events(&peer_events).unwrap(),
-        )
-        .is_err());
+            let policy = MigPolicy::from_str(policy_str).unwrap();
+            let event_log_policy = policy
+                .get_migtd_info_policy()
+                .unwrap()
+                .event_log
+                .as_ref()
+                .unwrap();
+
+            assert!(verify_events(
+                true,
+                &event_log_policy,
+                &parse_events(&local_events).unwrap(),
+                &parse_events(&peer_events).unwrap(),
+            )
+            .is_err());
+        });
     }
 
     #[test]
-    fn test_eventlogpolicy_verify_mismatch_root_key() {
+    fn test_eventlogpolicy_verify_mismatch_root_key() { test_policy_both_formats_str("policy_full2", |policy| {
         let payload = vec![0xffu8; 1024];
-        let policy = include_str!("../test/policy_full2.json");
         let trust_anchor = vec![0xffu8; 128];
         let svn = u64::to_le_bytes(0xf);
         let root_key = vec![0xffu8; 96];
@@ -1643,7 +1764,7 @@ mod tests {
             root_key_peer.as_slice(),
         );
 
-        let policy = serde_json::from_str::<MigPolicy>(policy).unwrap();
+        let policy = MigPolicy::from_str(policy).unwrap();
         let event_log_policy = policy
             .get_migtd_info_policy()
             .unwrap()
@@ -1658,7 +1779,7 @@ mod tests {
             &parse_events(&peer_events).unwrap(),
         )
         .is_err());
-    }
+    }); }
 
     #[test]
     fn test_xfam_mask() {
