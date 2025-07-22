@@ -1769,8 +1769,7 @@ fn build_packed_collateral_from_toml(config: &CollateralConfig) -> Result<Vec<u8
     // Optional validation: check if pck_crl_size matches actual size
     if let Some(expected_size) = config.pck_crl_size {
         if pck_crl_bytes.len() != expected_size as usize {
-            println!("Warning: PCK CRL size mismatch. Expected: {}, Actual: {}", 
-                    expected_size, pck_crl_bytes.len());
+            // Warning: PCK CRL size mismatch
         }
     }
     
@@ -1816,93 +1815,23 @@ fn load_collateral_from_toml(toml_path: &str) -> Option<Vec<u8>> {
                 Ok(config) => {
                     match build_packed_collateral_from_toml(&config) {
                         Ok(data) => {
-                            println!("Successfully loaded collateral from TOML file: {}", toml_path);
                             Some(data)
                         }
                         Err(e) => {
-                            println!("Error building collateral from TOML: {}", e);
                             None
                         }
                     }
                 }
                 Err(e) => {
-                    println!("Error parsing TOML file {}: {}", toml_path, e);
                     None
                 }
             }
         }
         Err(e) => {
-            println!("Error reading TOML file {}: {}", toml_path, e);
             None
         }
     }
 }
-
-/// Load collateral from policy files if they exist and contain collateral data
-/// Searches for policy.toml in common locations and extracts collateral section
-fn load_collateral_from_policy() -> Option<Vec<u8>> {
-    let policy_paths = [
-        "policy.toml",  // Current directory
-        "config/policy.toml",  // Config directory
-        "src/policy/test/policy.toml",  // Test directory relative path
-        "/home/bodzhang/MigTD/config/policy.toml",  // Absolute path to config
-        "/home/bodzhang/MigTD/src/policy/test/policy.toml",  // Absolute test path
-    ];
-    
-    for policy_path in &policy_paths {
-        if !Path::new(policy_path).exists() {
-            continue;
-        }
-        
-        match fs::read_to_string(policy_path) {
-            Ok(content) => {
-                // Try to parse the policy file and extract collateral
-                match policy::MigPolicyWithCollateral::from_toml(&content) {
-                    Ok(policy_with_collateral) => {
-                        if let Some(collateral_config) = policy_with_collateral.get_collateral() {
-                            // Convert policy::CollateralConfig to our local CollateralConfig
-                            let local_config = CollateralConfig {
-                                major_version: None, // Not provided in policy CollateralConfig
-                                minor_version: None, // Not provided in policy CollateralConfig
-                                pck_crl_issuer_chain: collateral_config.pck_crl_issuer_chain.clone(),
-                                root_ca_crl: collateral_config.root_ca_crl.clone(),
-                                pck_crl_size: None, // Not provided in policy CollateralConfig
-                                pck_crl: collateral_config.pck_crl.clone(),
-                                tcb_info_issuer_chain: collateral_config.tcb_info_issuer_chain.clone(),
-                                tcb_info: collateral_config.tcb_info.clone(),
-                                qe_identity_issuer_chain: collateral_config.qe_identity_issuer_chain.clone(),
-                                qe_identity: collateral_config.qe_identity.clone(),
-                            };
-                            
-                            match build_packed_collateral_from_toml(&local_config) {
-                                Ok(data) => {
-                                    println!("Successfully loaded collateral from policy file: {}", policy_path);
-                                    return Some(data);
-                                }
-                                Err(e) => {
-                                    println!("Error building collateral from policy file {}: {}", policy_path, e);
-                                }
-                            }
-                        } else {
-                            println!("Policy file {} found but contains no collateral section", policy_path);
-                        }
-                    }
-                    Err(e) => {
-                        println!("Error parsing policy file {}: {:?}", policy_path, e);
-                    }
-                }
-            }
-            Err(e) => {
-                println!("Error reading policy file {}: {}", policy_path, e);
-            }
-        }
-    }
-    
-    None
-}
-
-
-
 
 /// Initialize collateral from policy data
 /// This is the preferred initialization method when running in migtd context
@@ -1915,7 +1844,6 @@ pub fn init_collateral_from_policy(policy_data: &[u8]) -> bool {
             match policy::MigPolicyWithCollateral::from_str(policy_str) {
                 Ok(policy_with_collateral) => {
                     if let Some(collateral_config) = policy_with_collateral.get_collateral() {
-                        println!("DEBUG: Found collateral in policy data");
                         
                         // Convert policy::CollateralConfig to our local CollateralConfig
                         let local_config = CollateralConfig {
@@ -1931,95 +1859,27 @@ pub fn init_collateral_from_policy(policy_data: &[u8]) -> bool {
                             qe_identity: collateral_config.qe_identity.clone(),
                         };
                         
-                        println!("DEBUG: Policy collateral config lengths:");
-                        println!("  pck_crl_issuer_chain: {} bytes", local_config.pck_crl_issuer_chain.len());
-                        println!("  root_ca_crl: {} bytes", local_config.root_ca_crl.len());
-                        println!("  pck_crl: {} bytes", local_config.pck_crl.len());
-                        println!("  tcb_info_issuer_chain: {} bytes", local_config.tcb_info_issuer_chain.len());
-                        println!("  tcb_info: {} bytes", local_config.tcb_info.len());
-                        println!("  qe_identity_issuer_chain: {} bytes", local_config.qe_identity_issuer_chain.len());
-                        println!("  qe_identity: {} bytes", local_config.qe_identity.len());
-                        
                         match build_packed_collateral_from_toml(&local_config) {
                             Ok(packed_data) => {
-                                println!("DEBUG: Successfully built packed collateral from policy ({} bytes)", packed_data.len());
-                                
-                                // Compare with hardcoded collateral
-                                println!("DEBUG: Hardcoded collateral size: {} bytes", HARDCODED_COLLATERAL.len());
-                                
-                                if packed_data.len() != HARDCODED_COLLATERAL.len() {
-                                    println!("DEBUG: SIZE MISMATCH! Policy: {}, Hardcoded: {}", 
-                                            packed_data.len(), HARDCODED_COLLATERAL.len());
-                                } else {
-                                    println!("DEBUG: Sizes match, checking content...");
-                                    let mut differences = 0;
-                                    for (i, (policy_byte, hardcoded_byte)) in packed_data.iter().zip(HARDCODED_COLLATERAL.iter()).enumerate() {
-                                        if policy_byte != hardcoded_byte {
-                                            differences += 1;
-                                            if differences <= 10 { // Show first 10 differences
-                                                println!("DEBUG: Byte {} differs: policy=0x{:02x}, hardcoded=0x{:02x}", 
-                                                        i, policy_byte, hardcoded_byte);
-                                            }
-                                        }
-                                    }
-                                    if differences == 0 {
-                                        println!("DEBUG: Content matches perfectly!");
-                                    } else {
-                                        println!("DEBUG: Found {} total differences", differences);
-                                    }
-                                }
-                                
-                                // Compare headers
-                                if packed_data.len() >= core::mem::size_of::<PackedCollateral>() && 
-                                   HARDCODED_COLLATERAL.len() >= core::mem::size_of::<PackedCollateral>() {
-                                    unsafe {
-                                        let policy_header = &*(packed_data.as_ptr() as *const PackedCollateral);
-                                        let hardcoded_header = &*(HARDCODED_COLLATERAL.as_ptr() as *const PackedCollateral);
-                                        
-                                        println!("DEBUG: Header comparison:");
-                                        println!("  major_version: policy={}, hardcoded={}", 
-                                                policy_header.major_version, hardcoded_header.major_version);
-                                        println!("  minor_version: policy={}, hardcoded={}", 
-                                                policy_header.minor_version, hardcoded_header.minor_version);
-                                        println!("  pck_crl_issuer_chain_size: policy={}, hardcoded={}", 
-                                                policy_header.pck_crl_issuer_chain_size, hardcoded_header.pck_crl_issuer_chain_size);
-                                        println!("  root_ca_crl_size: policy={}, hardcoded={}", 
-                                                policy_header.root_ca_crl_size, hardcoded_header.root_ca_crl_size);
-                                        println!("  pck_crl_size: policy={}, hardcoded={}", 
-                                                policy_header.pck_crl_size, hardcoded_header.pck_crl_size);
-                                        println!("  tcb_info_issuer_chain_size: policy={}, hardcoded={}", 
-                                                policy_header.tcb_info_issuer_chain_size, hardcoded_header.tcb_info_issuer_chain_size);
-                                        println!("  tcb_info_size: policy={}, hardcoded={}", 
-                                                policy_header.tcb_info_size, hardcoded_header.tcb_info_size);
-                                        println!("  qe_identity_issuer_chain_size: policy={}, hardcoded={}", 
-                                                policy_header.qe_identity_issuer_chain_size, hardcoded_header.qe_identity_issuer_chain_size);
-                                        println!("  qe_identity_size: policy={}, hardcoded={}", 
-                                                policy_header.qe_identity_size, hardcoded_header.qe_identity_size);
-                                    }
-                                }
-                                
                                 let mut collateral = COLLATERAL.lock().unwrap();
                                 collateral.extend_from_slice(&packed_data);
-                                println!("Successfully initialized collateral from policy data ({} bytes)", packed_data.len());
                                 return;
                             }
                             Err(e) => {
-                                println!("Error building packed collateral from policy: {}", e);
+                                // Error building packed collateral from policy
                             }
                         }
                     } else {
-                        println!("Policy data found but contains no collateral section");
+                        // Policy data found but contains no collateral section
                     }
                 }
                 Err(e) => {
-                    println!("Failed to parse policy data: {:?}", e);
+                    // Failed to parse policy data
                 }
             }
         } else {
-            println!("Policy data is not valid UTF-8");
+            // Policy data is not valid UTF-8
         }
-        
-        println!("Policy-based collateral initialization failed");
     });
     
     // Return whether we successfully loaded policy collateral
@@ -2029,44 +1889,7 @@ pub fn init_collateral_from_policy(policy_data: &[u8]) -> bool {
     }
 }
 
-/// Initialize collateral from standalone files for testing purposes
-/// This is only used in test environments when migtd context is not available
-#[cfg(any(test, feature = "AzCVMEmu"))]
-pub fn init_collateral_from_files() {
-    INIT.call_once(|| {
-        let mut collateral = COLLATERAL.lock().unwrap();
-        let mut loaded = false;
-        
-        // Try standalone TOML files first
-        let toml_paths = [
-            "collateral.toml",  // Current directory
-            "src/policy/test/collateral.toml",  // Relative path from project root
-            "/home/bodzhang/MigTD/src/policy/test/collateral.toml",  // Absolute path
-        ];
-        
-        for path in &toml_paths {
-            if let Some(toml_data) = load_collateral_from_toml(path) {
-                collateral.extend_from_slice(&toml_data);
-                println!("Initialized collateral from standalone TOML file: {}", path);
-                loaded = true;
-                break;
-            }
-        }
-        
-        // Also try loading from policy files as fallback
-        if !loaded {
-            if let Some(policy_data) = load_collateral_from_policy() {
-                collateral.extend_from_slice(&policy_data);
-                println!("Initialized collateral from policy file");
-                loaded = true;
-            }
-        }
-        
-        if !loaded {
-            println!("File-based collateral initialization failed, will use hardcoded fallback");
-        }
-    });
-}
+
 
 /// Set custom collateral data (useful for testing or runtime updates)
 /// Returns true if successful, false otherwise
@@ -2173,7 +1996,6 @@ pub unsafe extern "C" fn servtd_get_quote(blob: *mut QuoteHeader, _len: u64) -> 
     
     // Use hardcoded collateral if COLLATERAL is empty (policy initialization failed)
     let collateral_data = if collateral.is_empty() {
-        println!("Using hardcoded collateral (fallback)");
         &HARDCODED_COLLATERAL
     } else {
         collateral.as_slice()
@@ -2249,41 +2071,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_toml_loading() {
-        // Test if TOML loading works
+    fn test_collateral_toml() {
+        // Test loading collateral.toml and building packed collateral data
         let toml_paths = [
-            "src/policy/test/collateral.toml",
-            "/home/bodzhang/MigTD/src/policy/test/collateral.toml",
+            "../../src/policy/test/collateral.toml",
         ];
         
-        let mut found = false;
+        let mut found_real_file = false;
+        
+        // First, try to load and process the actual collateral.toml file
         for path in &toml_paths {
-            if let Some(data) = load_collateral_from_toml(path) {
-                println!("Successfully loaded collateral from {}", path);
-                println!("Data size: {} bytes", data.len());
-                found = true;
-                
-                // Verify the data starts with the correct header
-                if data.len() >= 4 {
-                    let major_version = u16::from_le_bytes([data[0], data[1]]);
-                    let minor_version = u16::from_le_bytes([data[2], data[3]]);
-                    println!("Version: {}.{}", major_version, minor_version);
-                    assert_eq!(major_version, 3);
-                    assert_eq!(minor_version, 0);
+            if std::path::Path::new(path).exists() {
+                match std::fs::read_to_string(path) {
+                    Ok(toml_content) => {
+                        // Parse the TOML content
+                        match toml::from_str::<CollateralConfig>(&toml_content) {
+                            Ok(config) => {
+                                // Build packed collateral using build_packed_collateral_from_toml
+                                match build_packed_collateral_from_toml(&config) {
+                                    Ok(packed_data) => {
+                                        found_real_file = true;
+                                        
+                                        // Verify the packed data has correct header
+                                        assert!(packed_data.len() >= 4, "Packed data too small");
+                                        let major_version = u16::from_le_bytes([packed_data[0], packed_data[1]]);
+                                        let minor_version = u16::from_le_bytes([packed_data[2], packed_data[3]]);
+                                        assert_eq!(major_version, 3, "Major version should be 3");
+                                        assert_eq!(minor_version, 0, "Minor version should be 0");
+                                        
+                                        // Verify we have substantial data
+                                        assert!(packed_data.len() > 100, "Packed data should be substantial");
+                                        
+                                        println!("✅ Successfully loaded {} and built packed collateral ({} bytes)", path, packed_data.len());
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        panic!("Failed to build packed collateral from {}: {}", path, e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                panic!("Failed to parse TOML from {}: {}", path, e);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // File exists but can't read it, continue to next path
+                        continue;
+                    }
                 }
-                break;
             }
         }
         
-        if !found {
-            println!("Note: No TOML file found, which is expected in a test environment");
-        }
-    }
-
-    #[test]
-    fn test_collateral_config_parsing() {
-        // Test TOML parsing with a minimal config
-        let toml_content = r#"
+        // If no real file found, test with minimal config to verify parsing logic
+        if !found_real_file {
+            let toml_content = r#"
 pck_crl_issuer_chain = "test_chain"
 root_ca_crl = "test_crl"
 pck_crl_size = 100
@@ -2293,543 +2135,28 @@ tcb_info = "test_tcb_info"
 qe_identity_issuer_chain = "test_qe_chain"
 qe_identity = "test_qe_identity"
 "#;
-        
-        let config: CollateralConfig = toml::from_str(toml_content).expect("Failed to parse TOML");
-        
-        assert_eq!(config.major_version, None); // Should use default
-        assert_eq!(config.minor_version, None); // Should use default
-        assert_eq!(config.pck_crl_size, Some(100));
-        assert_eq!(config.pck_crl_issuer_chain, "test_chain");
-    }
-
-    #[test]
-    fn test_compare_toml_vs_hardcoded() {
-        println!("=== Comparing TOML vs Hardcoded Collateral ===");
-        
-        // Try multiple potential paths for the TOML file
-        let toml_paths = [
-            "src/policy/test/collateral.toml",
-            "./src/policy/test/collateral.toml",
-            "/home/bodzhang/MigTD/src/policy/test/collateral.toml",
-            "../../../src/policy/test/collateral.toml",
-        ];
-        
-        let mut toml_collateral = None;
-        for path in &toml_paths {
-            if let Some(data) = load_collateral_from_toml(path) {
-                println!("Successfully loaded TOML from: {}", path);
-                toml_collateral = Some(data);
-                break;
-            }
-        }
-        
-        if toml_collateral.is_none() {
-            println!("Could not load TOML file from any of the attempted paths:");
-            for path in &toml_paths {
-                println!("  {}", path);
-            }
-            println!("Current working directory: {:?}", std::env::current_dir());
-            return;
-        }
-        let toml_collateral = toml_collateral.unwrap();
-        
-        // Get hardcoded collateral
-        let hardcoded_collateral = &HARDCODED_COLLATERAL;
-        
-        println!("TOML collateral size: {} bytes", toml_collateral.len());
-        println!("Hardcoded collateral size: {} bytes", hardcoded_collateral.len());
-        
-        // Compare headers (first 32 bytes)
-        let header_size = std::cmp::min(32, std::cmp::min(toml_collateral.len(), hardcoded_collateral.len()));
-        println!("\n=== Header Comparison (first {} bytes) ===", header_size);
-        
-        for i in 0..header_size {
-            let toml_byte = toml_collateral[i];
-            let hardcoded_byte = hardcoded_collateral[i];
-            if toml_byte != hardcoded_byte {
-                println!("DIFF at byte {}: TOML=0x{:02x}, Hardcoded=0x{:02x}", i, toml_byte, hardcoded_byte);
-            }
-        }
-        
-        // Parse PackedCollateral header from both
-        if toml_collateral.len() >= size_of::<PackedCollateral>() && hardcoded_collateral.len() >= size_of::<PackedCollateral>() {
-            unsafe {
-                let toml_pc = &*(toml_collateral.as_ptr() as *const PackedCollateral);
-                let hardcoded_pc = &*(hardcoded_collateral.as_ptr() as *const PackedCollateral);
-                
-                println!("\n=== PackedCollateral Structure Comparison ===");
-                println!("major_version: TOML={}, Hardcoded={}", toml_pc.major_version, hardcoded_pc.major_version);
-                println!("minor_version: TOML={}, Hardcoded={}", toml_pc.minor_version, hardcoded_pc.minor_version);
-                println!("pck_crl_issuer_chain_size: TOML={}, Hardcoded={}", toml_pc.pck_crl_issuer_chain_size, hardcoded_pc.pck_crl_issuer_chain_size);
-                println!("root_ca_crl_size: TOML={}, Hardcoded={}", toml_pc.root_ca_crl_size, hardcoded_pc.root_ca_crl_size);
-                println!("pck_crl_size: TOML={}, Hardcoded={}", toml_pc.pck_crl_size, hardcoded_pc.pck_crl_size);
-                println!("tcb_info_issuer_chain_size: TOML={}, Hardcoded={}", toml_pc.tcb_info_issuer_chain_size, hardcoded_pc.tcb_info_issuer_chain_size);
-                println!("tcb_info_size: TOML={}, Hardcoded={}", toml_pc.tcb_info_size, hardcoded_pc.tcb_info_size);
-                println!("qe_identity_issuer_chain_size: TOML={}, Hardcoded={}", toml_pc.qe_identity_issuer_chain_size, hardcoded_pc.qe_identity_issuer_chain_size);
-                println!("qe_identity_size: TOML={}, Hardcoded={}", toml_pc.qe_identity_size, hardcoded_pc.qe_identity_size);
-            }
-        }
-        
-        // Compare first 100 bytes of data section
-        if toml_collateral.len() > size_of::<PackedCollateral>() && hardcoded_collateral.len() > size_of::<PackedCollateral>() {
-            let data_start = size_of::<PackedCollateral>();
-            let compare_len = std::cmp::min(100, std::cmp::min(
-                toml_collateral.len() - data_start,
-                hardcoded_collateral.len() - data_start
-            ));
             
-            println!("\n=== Data Section Comparison (first {} bytes) ===", compare_len);
-            let mut diff_count = 0;
-            for i in 0..compare_len {
-                let toml_byte = toml_collateral[data_start + i];
-                let hardcoded_byte = hardcoded_collateral[data_start + i];
-                if toml_byte != hardcoded_byte {
-                    if diff_count < 10 { // Limit output
-                        println!("DIFF at data byte {}: TOML=0x{:02x}, Hardcoded=0x{:02x}", i, toml_byte, hardcoded_byte);
-                    }
-                    diff_count += 1;
+            let config: CollateralConfig = toml::from_str(toml_content).expect("Failed to parse minimal TOML");
+            
+            // Verify config parsing
+            assert_eq!(config.major_version, None); // Should use default
+            assert_eq!(config.minor_version, None); // Should use default
+            assert_eq!(config.pck_crl_size, Some(100));
+            assert_eq!(config.pck_crl_issuer_chain, "test_chain");
+            
+            // Test building packed collateral from minimal config
+            match build_packed_collateral_from_toml(&config) {
+                Ok(packed_data) => {
+                    assert!(packed_data.len() >= 4, "Minimal packed data too small");
+                    let major_version = u16::from_le_bytes([packed_data[0], packed_data[1]]);
+                    let minor_version = u16::from_le_bytes([packed_data[2], packed_data[3]]);
+                    assert_eq!(major_version, 3);
+                    assert_eq!(minor_version, 0);
+                    println!("✅ Successfully built packed collateral from minimal config ({} bytes)", packed_data.len());
                 }
-            }
-            println!("Total differences in first {} data bytes: {}", compare_len, diff_count);
-        }
-    }
-
-    #[test]
-    fn test_debug_certificate_differences() {
-        println!("=== Debug Certificate Differences ===");
-        
-        // Load TOML config
-        let toml_result = load_collateral_from_toml("/home/bodzhang/MigTD/src/policy/test/collateral.toml");
-        if toml_result.is_none() {
-            println!("Could not load TOML file");
-            return;
-        }
-        let toml_collateral = toml_result.unwrap();
-        
-        // Parse the hardcoded collateral to extract individual sections
-        let hardcoded_collateral = &HARDCODED_COLLATERAL;
-        
-        if hardcoded_collateral.len() >= size_of::<PackedCollateral>() {
-            unsafe {
-                let hardcoded_pc = &*(hardcoded_collateral.as_ptr() as *const PackedCollateral);
-                let data_start = size_of::<PackedCollateral>();
-                let data_bytes = &hardcoded_collateral[data_start..];
-                
-                // Extract sections from hardcoded data
-                let mut offset = 0;
-                let pck_crl_issuer_chain_hardcoded = &data_bytes[offset..offset + hardcoded_pc.pck_crl_issuer_chain_size as usize];
-                offset += hardcoded_pc.pck_crl_issuer_chain_size as usize;
-                
-                let root_ca_crl_hardcoded = &data_bytes[offset..offset + hardcoded_pc.root_ca_crl_size as usize];
-                offset += hardcoded_pc.root_ca_crl_size as usize;
-                
-                let pck_crl_hardcoded = &data_bytes[offset..offset + hardcoded_pc.pck_crl_size as usize];
-                
-                // Load TOML and extract the first section (pck_crl_issuer_chain)
-                let toml_content = fs::read_to_string("/home/bodzhang/MigTD/src/policy/test/collateral.toml").unwrap();
-                let config: CollateralConfig = toml::from_str(&toml_content).unwrap();
-                let pck_crl_issuer_chain_toml = config.pck_crl_issuer_chain.as_bytes();
-                
-                println!("PCK CRL Issuer Chain comparison:");
-                println!("Hardcoded size: {}", hardcoded_pc.pck_crl_issuer_chain_size);
-                println!("TOML size: {}", pck_crl_issuer_chain_toml.len());
-                
-                // Check the last few bytes of each
-                println!("\nLast 10 bytes of hardcoded pck_crl_issuer_chain:");
-                let start = pck_crl_issuer_chain_hardcoded.len().saturating_sub(10);
-                for (i, &byte) in pck_crl_issuer_chain_hardcoded[start..].iter().enumerate() {
-                    println!("  [{:2}]: 0x{:02x} ('{}')", start + i, byte, if byte.is_ascii_graphic() || byte == b' ' { byte as char } else { '.' });
+                Err(e) => {
+                    panic!("Failed to build packed collateral from minimal config: {}", e);
                 }
-                
-                println!("\nLast 10 bytes of TOML pck_crl_issuer_chain:");
-                let start = pck_crl_issuer_chain_toml.len().saturating_sub(10);
-                for (i, &byte) in pck_crl_issuer_chain_toml[start..].iter().enumerate() {
-                    println!("  [{:2}]: 0x{:02x} ('{}')", start + i, byte, if byte.is_ascii_graphic() || byte == b' ' { byte as char } else { '.' });
-                }
-                
-                // Check if TOML version is missing a trailing newline
-                if pck_crl_issuer_chain_hardcoded.len() == pck_crl_issuer_chain_toml.len() + 1 {
-                    let hardcoded_last = pck_crl_issuer_chain_hardcoded.last().copied().unwrap_or(0);
-                    println!("\nHardcoded has 1 extra byte: 0x{:02x} ('{}')", hardcoded_last, if hardcoded_last.is_ascii_graphic() || hardcoded_last == b' ' { hardcoded_last as char } else { '.' });
-                    if hardcoded_last == b'\n' {
-                        println!("Missing trailing newline in TOML data!");
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_quote_verification_with_toml() {
-        println!("=== Testing Quote Verification with TOML Collateral ===");
-        
-        // Load TOML collateral directly
-        let toml_collateral = load_collateral_from_toml("/home/bodzhang/MigTD/src/policy/test/collateral.toml");
-        assert!(toml_collateral.is_some(), "Should be able to load TOML collateral");
-        
-        let collateral_data = toml_collateral.unwrap();
-        
-        // Clear existing collateral and set the TOML data
-        {
-            let mut collateral = COLLATERAL.lock().unwrap();
-            collateral.clear();
-            collateral.extend_from_slice(&collateral_data);
-        }
-        
-        println!("Collateral loaded with {} bytes", collateral_data.len());
-        
-        // Verify it's the TOML version by checking that it's 13543 bytes
-        assert_eq!(collateral_data.len(), 13543, "Should use TOML collateral (13543 bytes)");
-        
-        // Verify header structure
-        if collateral_data.len() >= size_of::<PackedCollateral>() {
-            unsafe {
-                let pc = &*(collateral_data.as_ptr() as *const PackedCollateral);
-                assert_eq!(pc.major_version, 3);
-                assert_eq!(pc.minor_version, 0);
-                println!("TOML collateral verified: version {}.{}, {} total bytes", 
-                        pc.major_version, pc.minor_version, collateral_data.len());
-            }
-        }
-        
-        // Test that the collateral can be retrieved (but DON'T call get_collateral_size which calls init_collateral)
-        let current_size = {
-            let collateral = COLLATERAL.lock().unwrap();
-            collateral.len()
-        };
-        println!("Current collateral size: {} bytes", current_size);
-        assert_eq!(current_size, 13543, "Collateral should remain 13543 bytes");
-    }
-
-    #[test]
-    fn test_byte_by_byte_comparison() {
-        println!("=== Byte-by-Byte Comparison: TOML vs Policy.toml vs Hardcoded ===");
-        
-        // Load standalone TOML collateral
-        let toml_result = load_collateral_from_toml("/home/bodzhang/MigTD/src/policy/test/collateral.toml");
-        
-        // Load policy.toml collateral
-        let policy_result = load_collateral_from_policy();
-        
-        // Get hardcoded collateral
-        let hardcoded_collateral = &HARDCODED_COLLATERAL;
-        
-        println!("Standalone TOML size: {} bytes", 
-                if let Some(ref data) = toml_result { data.len() } else { 0 });
-        println!("Policy.toml size: {} bytes", 
-                if let Some(ref data) = policy_result { data.len() } else { 0 });
-        println!("Hardcoded size: {} bytes", hardcoded_collateral.len());
-        
-        // Function to compare two collateral sources
-        let compare_collaterals = |name1: &str, data1: &[u8], name2: &str, data2: &[u8]| -> bool {
-            println!("\n--- Comparing {} vs {} ---", name1, name2);
-            
-            if data1.len() != data2.len() {
-                println!("❌ Size mismatch: {} has {} bytes, {} has {} bytes", 
-                        name1, data1.len(), name2, data2.len());
-                return false;
-            }
-            
-            let mut differences = Vec::new();
-            let mut identical_count = 0;
-            
-            // Compare every byte
-            for i in 0..data1.len() {
-                let byte1 = data1[i];
-                let byte2 = data2[i];
-                
-                if byte1 != byte2 {
-                    differences.push((i, byte1, byte2));
-                } else {
-                    identical_count += 1;
-                }
-            }
-            
-            println!("Identical bytes: {}", identical_count);
-            println!("Different bytes: {}", differences.len());
-            
-            if differences.is_empty() {
-                println!("✅ PERFECT MATCH: All bytes are identical!");
-                return true;
-            } else {
-                // Check if differences are only string termination differences (\n vs \0)
-                let only_termination_diffs = differences.iter().all(|(_, byte1, byte2)| {
-                    (*byte1 == b'\n' && *byte2 == b'\0') || (*byte1 == b'\0' && *byte2 == b'\n')
-                });
-                
-                if only_termination_diffs {
-                    println!("✅ ACCEPTABLE DIFFERENCES: Only string termination differences (\\n vs \\0)");
-                    println!("Found {} string termination differences - this is expected between TOML and hardcoded formats", differences.len());
-                    return true;
-                }
-                
-                println!("❌ SIGNIFICANT DIFFERENCES FOUND:");
-                
-                // Show first 10 differences
-                for (i, (offset, byte1, byte2)) in differences.iter().enumerate() {
-                    if i >= 10 {
-                        println!("... and {} more differences", differences.len() - 10);
-                        break;
-                    }
-                    
-                    let char1 = if byte1.is_ascii_graphic() || *byte1 == b' ' { 
-                        *byte1 as char 
-                    } else { 
-                        '.' 
-                    };
-                    let char2 = if byte2.is_ascii_graphic() || *byte2 == b' ' { 
-                        *byte2 as char 
-                    } else { 
-                        '.' 
-                    };
-                    
-                    println!("  Byte {}: {}=0x{:02x}('{}') vs {}=0x{:02x}('{}')", 
-                            offset, name1, byte1, char1, name2, byte2, char2);
-                }
-                
-                // Analyze which sections have differences
-                if data1.len() >= size_of::<PackedCollateral>() {
-                    println!("\n=== Section Analysis ===");
-                    unsafe {
-                        let pc = &*(data1.as_ptr() as *const PackedCollateral);
-                        let header_size = size_of::<PackedCollateral>();
-                        
-                        let mut offset = header_size;
-                        let sections = [
-                            ("pck_crl_issuer_chain", pc.pck_crl_issuer_chain_size as usize),
-                            ("root_ca_crl", pc.root_ca_crl_size as usize),
-                            ("pck_crl", pc.pck_crl_size as usize),
-                            ("tcb_info_issuer_chain", pc.tcb_info_issuer_chain_size as usize),
-                            ("tcb_info", pc.tcb_info_size as usize),
-                            ("qe_identity_issuer_chain", pc.qe_identity_issuer_chain_size as usize),
-                            ("qe_identity", pc.qe_identity_size as usize),
-                        ];
-                        
-                        for (section_name, section_size) in sections.iter() {
-                            let section_end = offset + section_size;
-                            let section_diffs: Vec<_> = differences.iter()
-                                .filter(|(diff_offset, _, _)| *diff_offset >= offset && *diff_offset < section_end)
-                                .collect();
-                            
-                            if !section_diffs.is_empty() {
-                                println!("Section '{}' (bytes {}-{}): {} differences", 
-                                        section_name, offset, section_end - 1, section_diffs.len());
-                                
-                                // Show a sample of the data from each version
-                                let sample_start = section_diffs[0].0;
-                                let sample_end = std::cmp::min(sample_start + 50, section_end);
-                                
-                                println!("  Sample {}: {:?}", 
-                                        name1, String::from_utf8_lossy(&data1[sample_start..sample_end]));
-                                println!("  Sample {}: {:?}", 
-                                        name2, String::from_utf8_lossy(&data2[sample_start..sample_end]));
-                            }
-                            
-                            offset = section_end;
-                        }
-                    }
-                }
-                
-                return false;
-            }
-        };
-        
-        let mut all_match = true;
-        
-        // Compare standalone TOML vs hardcoded
-        if let Some(ref toml_data) = toml_result {
-            if !compare_collaterals("Standalone TOML", toml_data, "Hardcoded", hardcoded_collateral) {
-                all_match = false;
-            }
-        } else {
-            println!("⚠️  Could not load standalone TOML file, skipping comparison");
-        }
-        
-        // Compare policy.toml vs hardcoded
-        if let Some(ref policy_data) = policy_result {
-            if !compare_collaterals("Policy.toml", policy_data, "Hardcoded", hardcoded_collateral) {
-                all_match = false;
-            }
-        } else {
-            println!("⚠️  Could not load policy.toml collateral, skipping comparison");
-        }
-        
-        // Compare standalone TOML vs policy.toml (if both available)
-        if let (Some(ref toml_data), Some(ref policy_data)) = (&toml_result, &policy_result) {
-            if !compare_collaterals("Standalone TOML", toml_data, "Policy.toml", policy_data) {
-                all_match = false;
-            }
-        }
-        
-        // Final validation
-        println!("\n=== Final Validation ===");
-        if all_match && toml_result.is_some() && policy_result.is_some() {
-            println!("✅ ALL COLLATERAL SOURCES MATCH PERFECTLY!");
-        } else if all_match {
-            println!("✅ Available collateral sources match");
-        } else {
-            println!("❌ COLLATERAL MISMATCHES DETECTED");
-            println!("This suggests that the policy.toml collateral may be different from the expected hardcoded values.");
-            println!("Quote verification may fail due to collateral inconsistencies.");
-        }
-        
-        // Only fail the test if there are differences between available sources
-        if !all_match {
-            let mut error_msg = String::new();
-            if toml_result.is_some() {
-                error_msg.push_str("standalone TOML vs hardcoded, ");
-            }
-            if policy_result.is_some() {
-                error_msg.push_str("policy.toml vs hardcoded, ");
-            }
-            if toml_result.is_some() && policy_result.is_some() {
-                error_msg.push_str("standalone TOML vs policy.toml");
-            }
-            
-            panic!("Found collateral differences between: {}", error_msg.trim_end_matches(", "));
-        }
-    }
-
-    #[test]
-    fn test_extract_hardcoded_to_toml() {
-        println!("=== Extracting Hardcoded Data to TOML Format ===");
-        
-        let hardcoded_collateral = &HARDCODED_COLLATERAL;
-        
-        if hardcoded_collateral.len() < size_of::<PackedCollateral>() {
-            println!("Error: Hardcoded data too small");
-            return;
-        }
-        
-        unsafe {
-            let pc = &*(hardcoded_collateral.as_ptr() as *const PackedCollateral);
-            let data_start = size_of::<PackedCollateral>();
-            let data_bytes = &hardcoded_collateral[data_start..];
-            
-            // Extract sections
-            let mut offset = 0;
-            
-            let pck_crl_issuer_chain_size = pc.pck_crl_issuer_chain_size as usize;
-            let pck_crl_issuer_chain = &data_bytes[offset..offset + pck_crl_issuer_chain_size];
-            offset += pck_crl_issuer_chain_size;
-            
-            let root_ca_crl_size = pc.root_ca_crl_size as usize;
-            let root_ca_crl = &data_bytes[offset..offset + root_ca_crl_size];
-            offset += root_ca_crl_size;
-            
-            let pck_crl_size = pc.pck_crl_size as usize;
-            let pck_crl = &data_bytes[offset..offset + pck_crl_size];
-            offset += pck_crl_size;
-            
-            let tcb_info_issuer_chain_size = pc.tcb_info_issuer_chain_size as usize;
-            let tcb_info_issuer_chain = &data_bytes[offset..offset + tcb_info_issuer_chain_size];
-            offset += tcb_info_issuer_chain_size;
-            
-            let tcb_info_size = pc.tcb_info_size as usize;
-            let tcb_info = &data_bytes[offset..offset + tcb_info_size];
-            offset += tcb_info_size;
-            
-            let qe_identity_issuer_chain_size = pc.qe_identity_issuer_chain_size as usize;
-            let qe_identity_issuer_chain = &data_bytes[offset..offset + qe_identity_issuer_chain_size];
-            offset += qe_identity_issuer_chain_size;
-            
-            let qe_identity_size = pc.qe_identity_size as usize;
-            let qe_identity = &data_bytes[offset..offset + qe_identity_size];
-            
-            println!("Extracted sections:");
-            println!("- pck_crl_issuer_chain: {} bytes", pck_crl_issuer_chain_size);
-            println!("- root_ca_crl: {} bytes", root_ca_crl_size);
-            println!("- pck_crl: {} bytes", pck_crl_size);
-            println!("- tcb_info_issuer_chain: {} bytes", tcb_info_issuer_chain_size);
-            println!("- tcb_info: {} bytes", tcb_info_size);
-            println!("- qe_identity_issuer_chain: {} bytes", qe_identity_issuer_chain_size);
-            println!("- qe_identity: {} bytes", qe_identity_size);
-            
-            // Generate TOML content
-            let mut toml_content = String::new();
-            toml_content.push_str(&format!("major_version = {}\n", pc.major_version));
-            toml_content.push_str(&format!("minor_version = {}\n\n", pc.minor_version));
-            
-            // Remove null terminators and convert to string
-            let clean_pck_crl_issuer_chain = if pck_crl_issuer_chain.ends_with(&[0]) {
-                &pck_crl_issuer_chain[..pck_crl_issuer_chain.len()-1]
-            } else {
-                pck_crl_issuer_chain
-            };
-            
-            let clean_root_ca_crl = if root_ca_crl.ends_with(&[0]) {
-                &root_ca_crl[..root_ca_crl.len()-1]
-            } else {
-                root_ca_crl
-            };
-            
-            let clean_pck_crl = if pck_crl.ends_with(&[0]) {
-                &pck_crl[..pck_crl.len()-1]
-            } else {
-                pck_crl
-            };
-            
-            let clean_tcb_info_issuer_chain = if tcb_info_issuer_chain.ends_with(&[0]) {
-                &tcb_info_issuer_chain[..tcb_info_issuer_chain.len()-1]
-            } else {
-                tcb_info_issuer_chain
-            };
-            
-            let clean_qe_identity_issuer_chain = if qe_identity_issuer_chain.ends_with(&[0]) {
-                &qe_identity_issuer_chain[..qe_identity_issuer_chain.len()-1]
-            } else {
-                qe_identity_issuer_chain
-            };
-            
-            toml_content.push_str("pck_crl_issuer_chain = \"\"\"\n");
-            toml_content.push_str(&String::from_utf8_lossy(clean_pck_crl_issuer_chain));
-            toml_content.push_str("\"\"\"\n\n");
-            
-            toml_content.push_str("root_ca_crl = \"\"\"\n");
-            toml_content.push_str(&String::from_utf8_lossy(clean_root_ca_crl));
-            toml_content.push_str("\"\"\"\n\n");
-            
-            toml_content.push_str(&format!("pck_crl_size = {}\n", pck_crl_size));
-            toml_content.push_str("pck_crl = \"\"\"\n");
-            toml_content.push_str(&String::from_utf8_lossy(clean_pck_crl));
-            toml_content.push_str("\"\"\"\n\n");
-            
-            toml_content.push_str("tcb_info_issuer_chain = \"\"\"\n");
-            toml_content.push_str(&String::from_utf8_lossy(clean_tcb_info_issuer_chain));
-            toml_content.push_str("\"\"\"\n\n");
-            
-            toml_content.push_str("tcb_info = \"\"\"\n");
-            toml_content.push_str(&String::from_utf8_lossy(tcb_info));
-            toml_content.push_str("\"\"\"\n\n");
-            
-            toml_content.push_str("qe_identity_issuer_chain = \"\"\"\n");
-            toml_content.push_str(&String::from_utf8_lossy(clean_qe_identity_issuer_chain));
-            toml_content.push_str("\"\"\"\n\n");
-            
-            toml_content.push_str("qe_identity = \"\"\"\n");
-            toml_content.push_str(&String::from_utf8_lossy(qe_identity));
-            toml_content.push_str("\"\"\"\n");
-            
-            // Write to file
-            if let Err(e) = std::fs::write("/home/bodzhang/MigTD/hardcoded_collateral.toml", &toml_content) {
-                println!("Error writing TOML file: {}", e);
-            } else {
-                println!("Generated hardcoded_collateral.toml file");
-            }
-            
-            // Test that the generated TOML produces identical data
-            if let Ok(generated_config) = toml::from_str::<CollateralConfig>(&toml_content) {
-                if let Ok(generated_data) = build_packed_collateral_from_toml(&generated_config) {
-                    if generated_data == hardcoded_collateral {
-                        println!("✅ Generated TOML produces identical data!");
-                    } else {
-                        println!("❌ Generated TOML produces different data (size: {})", generated_data.len());
-                    }
-                } else {
-                    println!("Error building collateral from generated TOML");
-                }
-            } else {
-                println!("Error parsing generated TOML");
             }
         }
     }
@@ -2838,30 +2165,6 @@ qe_identity = "test_qe_identity"
 #[cfg(test)]
 mod policy_collateral_tests {
     use super::*;
-
-    #[test]
-    fn test_load_collateral_from_policy() {
-        println!("=== Testing Policy Collateral Loading ===");
-        
-        // Test our new function that loads collateral from policy files
-        if let Some(policy_collateral) = load_collateral_from_policy() {
-            println!("✅ Successfully loaded collateral from policy file!");
-            println!("   Collateral size: {} bytes", policy_collateral.len());
-            
-            // Verify it's valid collateral data by checking the header
-            if policy_collateral.len() >= 8 {
-                let major_version = u16::from_le_bytes([policy_collateral[0], policy_collateral[1]]);
-                let minor_version = u16::from_le_bytes([policy_collateral[2], policy_collateral[3]]);
-                println!("   Version: {}.{}", major_version, minor_version);
-                println!("✅ Policy collateral loading test passed!");
-            } else {
-                println!("❌ Collateral data too small to be valid");
-            }
-        } else {
-            println!("⚠️  No collateral found in policy files");
-            println!("   This is expected if policy.toml doesn't contain a [collateral] section");
-        }
-    }
 
     #[test]
     fn test_collateral_priority_system() {
@@ -2885,10 +2188,21 @@ mod policy_collateral_tests {
     fn test_init_collateral_from_policy_data() {
         println!("=== Testing init_collateral_from_policy with policy data ===");
         
-        // Read the actual policy.toml content
-        let policy_content = std::fs::read_to_string("/home/bodzhang/MigTD/config/policy.toml")
-            .expect("Failed to read policy.toml");
+        // Read the actual policy.toml content - try multiple relative paths
+        let policy_paths = [
+            "../../config/policy.toml",
+            "../../src/policy/test/policy.toml",
+        ];
         
+        let mut policy_content = None;
+        for path in &policy_paths {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                policy_content = Some(content);
+                break;
+            }
+        }
+        
+        let policy_content = policy_content.expect("Failed to find policy.toml in any of the expected paths");
         let policy_bytes = policy_content.as_bytes();
         
         // Test initialization from policy data

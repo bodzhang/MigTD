@@ -24,7 +24,7 @@ pub use attest::*;
 
 // Export collateral functions for AzCVMEmu mode
 #[cfg(feature = "AzCVMEmu")]
-pub use collateral::{init_collateral_from_files, init_collateral_from_policy};
+pub use collateral::init_collateral_from_policy;
 
 pub const TD_VERIFIED_REPORT_SIZE: usize = 734;
 
