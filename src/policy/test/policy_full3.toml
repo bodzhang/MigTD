@@ -1,0 +1,48 @@
+id = "6BDFA241-BBDC-46A6-B54A-D9DDE333F7BF"
+
+[[policy]]
+policy_type = "Platform"
+fmspc = "30806F000000"
+
+[policy.Platform]
+
+[policy.Platform.TcbInfo]
+sgxtcbcomponents = { operation = "array-greater-or-equal", reference = "self" }
+pcesvn = { operation = "equal", reference = "self" }
+tdxtcbcomponents = { operation = "array-greater-or-equal", reference = "self" }
+
+[[policy]]
+policy_type = "QE"
+
+[policy.QE]
+
+[policy.QE.QeIdentity]
+MISCSELECT = { operation = "equal", reference = "00000000" }
+
+[[policy]]
+policy_type = "TdxModule"
+
+[policy.TDXModule]
+
+[policy.TDXModule.TDXModule_Identity]
+TDXModuleMajorVersion = { operation = "equal", reference = 1 }
+TDXModuleSVN = { operation = "equal", reference = 0 }
+MRSIGNERSEAM = { operation = "equal", reference = "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" }
+ATTRIBUTES = { operation = "equal", reference = "0000000000000000" }
+
+[[policy]]
+policy_type = "MigTD"
+
+[policy.MigTD]
+
+[policy.MigTD.TDINFO]
+ATTRIBUTES = { operation = "equal", reference = "self" }
+XFAM = { operation = "equal", reference = "self" }
+MRTD = { operation = "equal", reference = "self" }
+MRCONFIGID = { operation = "equal", reference = "self" }
+MROWNER = { operation = "equal", reference = "self" }
+MROWNERCONFIG = { operation = "equal", reference = "self" }
+RTMR0 = { operation = "equal", reference = "self" }
+RTMR1 = { operation = "equal", reference = "self" }
+RTMR2 = { operation = "equal", reference = "self" }
+RTMR3 = { operation = "equal", reference = "self" }
