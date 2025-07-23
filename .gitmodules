@@ -4,3 +4,6 @@
 [submodule "deps/td-shim"]
 	path = deps/td-shim
 	url = https://github.com/confidential-containers/td-shim
+[submodule "deps/toml-nostd"]
+	path = deps/toml-nostd
+	url = https://github.com/toml-rs/toml.git

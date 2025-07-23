@@ -14,7 +14,7 @@ use td_shim::event_log::{
 };
 
 use crate::{
-    config::{MigPolicy, MigPolicyWithCollateral, CollateralConfig, Property, Platform, QeIdentity, TdInfo},
+    config::{MigPolicy, CollateralConfig, Property, Platform, QeIdentity, TdInfo},
     format_bytes_hex, Policy, PolicyError,
 };
 

@@ -8,24 +8,6 @@
 use std::sync::{Mutex, Once};
 use std::ptr;
 use std::mem::size_of;
-use std::fs;
-use std::path::Path;
-use serde::Deserialize;
-
-/// TOML structure for collateral configuration
-#[derive(Deserialize, Debug)]
-pub struct CollateralConfig {
-    pub major_version: Option<u16>,
-    pub minor_version: Option<u16>,
-    pub pck_crl_issuer_chain: String,
-    pub root_ca_crl: String,
-    pub pck_crl_size: Option<u32>, // Optional size field from TOML
-    pub pck_crl: String,
-    pub tcb_info_issuer_chain: String,
-    pub tcb_info: String,
-    pub qe_identity_issuer_chain: String,
-    pub qe_identity: String,
-}
 
 /// Hardcoded collateral data that will be loaded into the global storage
 const HARDCODED_COLLATERAL: [u8; 13543] = [
@@ -1735,104 +1717,6 @@ static COLLATERAL: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 static INIT: Once = Once::new();
 
 /// Build PackedCollateral binary data from TOML configuration
-fn build_packed_collateral_from_toml(config: &CollateralConfig) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut result = Vec::new();
-    
-    // Create the header (PackedCollateral structure)
-    let major_version = config.major_version.unwrap_or(3);
-    let minor_version = config.minor_version.unwrap_or(0);
-    
-    // Convert string data to bytes and add null terminators to match hardcoded format
-    let mut pck_crl_issuer_chain_bytes = config.pck_crl_issuer_chain.as_bytes().to_vec();
-    pck_crl_issuer_chain_bytes.push(0); // Add null terminator
-    
-    let mut root_ca_crl_bytes = config.root_ca_crl.as_bytes().to_vec();
-    root_ca_crl_bytes.push(0); // Add null terminator
-    
-    let mut pck_crl_bytes = config.pck_crl.as_bytes().to_vec();
-    pck_crl_bytes.push(0); // Add null terminator
-    
-    let mut tcb_info_issuer_chain_bytes = config.tcb_info_issuer_chain.as_bytes().to_vec();
-    tcb_info_issuer_chain_bytes.push(0); // Add null terminator
-    
-    let mut tcb_info_bytes = config.tcb_info.as_bytes().to_vec();
-    // Add null terminator for quote verification
-    tcb_info_bytes.push(0);
-    
-    let mut qe_identity_issuer_chain_bytes = config.qe_identity_issuer_chain.as_bytes().to_vec();
-    qe_identity_issuer_chain_bytes.push(0); // Add null terminator
-    
-    let mut qe_identity_bytes = config.qe_identity.as_bytes().to_vec();
-    // Add null terminator for quote verification
-    qe_identity_bytes.push(0);
-    
-    // Optional validation: check if pck_crl_size matches actual size
-    if let Some(expected_size) = config.pck_crl_size {
-        if pck_crl_bytes.len() != expected_size as usize {
-            // Warning: PCK CRL size mismatch
-        }
-    }
-    
-    // Build PackedCollateral header
-    result.extend_from_slice(&major_version.to_le_bytes());
-    result.extend_from_slice(&minor_version.to_le_bytes());
-    result.extend_from_slice(&(pck_crl_issuer_chain_bytes.len() as u32).to_le_bytes());
-    result.extend_from_slice(&(root_ca_crl_bytes.len() as u32).to_le_bytes());
-    result.extend_from_slice(&(pck_crl_bytes.len() as u32).to_le_bytes());
-    result.extend_from_slice(&(tcb_info_issuer_chain_bytes.len() as u32).to_le_bytes());
-    result.extend_from_slice(&(tcb_info_bytes.len() as u32).to_le_bytes());
-    result.extend_from_slice(&(qe_identity_issuer_chain_bytes.len() as u32).to_le_bytes());
-    result.extend_from_slice(&(qe_identity_bytes.len() as u32).to_le_bytes());
-    
-    // Append data in the order specified by tdtools:
-    // [pck_crl_issuer_chain bytes]
-    // [root_ca_crl bytes]
-    // [pck_crl bytes]
-    // [tcb_info_issuer_chain bytes]
-    // [tcb_info bytes]
-    // [qe_identity_issuer_chain bytes]
-    // [qe_identity bytes]
-    result.extend_from_slice(&pck_crl_issuer_chain_bytes);
-    result.extend_from_slice(&root_ca_crl_bytes);
-    result.extend_from_slice(&pck_crl_bytes);
-    result.extend_from_slice(&tcb_info_issuer_chain_bytes);
-    result.extend_from_slice(&tcb_info_bytes);
-    result.extend_from_slice(&qe_identity_issuer_chain_bytes);
-    result.extend_from_slice(&qe_identity_bytes);
-    
-    Ok(result)
-}
-
-/// Load collateral from TOML file if it exists
-fn load_collateral_from_toml(toml_path: &str) -> Option<Vec<u8>> {
-    if !Path::new(toml_path).exists() {
-        return None;
-    }
-    
-    match fs::read_to_string(toml_path) {
-        Ok(content) => {
-            match toml::from_str::<CollateralConfig>(&content) {
-                Ok(config) => {
-                    match build_packed_collateral_from_toml(&config) {
-                        Ok(data) => {
-                            Some(data)
-                        }
-                        Err(e) => {
-                            None
-                        }
-                    }
-                }
-                Err(e) => {
-                    None
-                }
-            }
-        }
-        Err(e) => {
-            None
-        }
-    }
-}
-
 /// Initialize collateral from policy data
 /// This is the preferred initialization method when running in migtd context
 /// Returns true if successful, false if policy data doesn't contain collateral
@@ -1845,27 +1729,14 @@ pub fn init_collateral_from_policy(policy_data: &[u8]) -> bool {
                 Ok(policy_with_collateral) => {
                     if let Some(collateral_config) = policy_with_collateral.get_collateral() {
                         
-                        // Convert policy::CollateralConfig to our local CollateralConfig
-                        let local_config = CollateralConfig {
-                            major_version: None,
-                            minor_version: None,
-                            pck_crl_issuer_chain: collateral_config.pck_crl_issuer_chain.clone(),
-                            root_ca_crl: collateral_config.root_ca_crl.clone(),
-                            pck_crl_size: None,
-                            pck_crl: collateral_config.pck_crl.clone(),
-                            tcb_info_issuer_chain: collateral_config.tcb_info_issuer_chain.clone(),
-                            tcb_info: collateral_config.tcb_info.clone(),
-                            qe_identity_issuer_chain: collateral_config.qe_identity_issuer_chain.clone(),
-                            qe_identity: collateral_config.qe_identity.clone(),
-                        };
-                        
-                        match build_packed_collateral_from_toml(&local_config) {
+                        // Use the policy crate's CollateralConfig directly
+                        match collateral_config.build_packed_collateral() {
                             Ok(packed_data) => {
                                 let mut collateral = COLLATERAL.lock().unwrap();
                                 collateral.extend_from_slice(&packed_data);
                                 return;
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 // Error building packed collateral from policy
                             }
                         }
@@ -1873,7 +1744,7 @@ pub fn init_collateral_from_policy(policy_data: &[u8]) -> bool {
                         // Policy data found but contains no collateral section
                     }
                 }
-                Err(e) => {
+                Err(_e) => {
                     // Failed to parse policy data
                 }
             }
@@ -1893,6 +1764,7 @@ pub fn init_collateral_from_policy(policy_data: &[u8]) -> bool {
 
 /// Set custom collateral data (useful for testing or runtime updates)
 /// Returns true if successful, false otherwise
+#[allow(dead_code)]
 pub fn set_collateral_data(data: &[u8]) -> bool {
     match COLLATERAL.lock() {
         Ok(mut collateral) => {
@@ -1905,6 +1777,7 @@ pub fn set_collateral_data(data: &[u8]) -> bool {
 }
 
 /// Get the current collateral data size
+#[allow(dead_code)]
 pub fn get_collateral_size() -> usize {
     match COLLATERAL.lock() {
         Ok(collateral) => {
@@ -2071,157 +1944,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_collateral_toml() {
-        // Test loading collateral.toml and building packed collateral data
-        let toml_paths = [
-            "../../src/policy/test/collateral.toml",
-        ];
-        
-        let mut found_real_file = false;
-        
-        // First, try to load and process the actual collateral.toml file
-        for path in &toml_paths {
-            if std::path::Path::new(path).exists() {
-                match std::fs::read_to_string(path) {
-                    Ok(toml_content) => {
-                        // Parse the TOML content
-                        match toml::from_str::<CollateralConfig>(&toml_content) {
-                            Ok(config) => {
-                                // Build packed collateral using build_packed_collateral_from_toml
-                                match build_packed_collateral_from_toml(&config) {
-                                    Ok(packed_data) => {
-                                        found_real_file = true;
-                                        
-                                        // Verify the packed data has correct header
-                                        assert!(packed_data.len() >= 4, "Packed data too small");
-                                        let major_version = u16::from_le_bytes([packed_data[0], packed_data[1]]);
-                                        let minor_version = u16::from_le_bytes([packed_data[2], packed_data[3]]);
-                                        assert_eq!(major_version, 3, "Major version should be 3");
-                                        assert_eq!(minor_version, 0, "Minor version should be 0");
-                                        
-                                        // Verify we have substantial data
-                                        assert!(packed_data.len() > 100, "Packed data should be substantial");
-                                        
-                                        println!("✅ Successfully loaded {} and built packed collateral ({} bytes)", path, packed_data.len());
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        panic!("Failed to build packed collateral from {}: {}", path, e);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                panic!("Failed to parse TOML from {}: {}", path, e);
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        // File exists but can't read it, continue to next path
-                        continue;
-                    }
-                }
-            }
-        }
-        
-        // If no real file found, test with minimal config to verify parsing logic
-        if !found_real_file {
-            let toml_content = r#"
-pck_crl_issuer_chain = "test_chain"
-root_ca_crl = "test_crl"
-pck_crl_size = 100
-pck_crl = "test_pck_crl"
-tcb_info_issuer_chain = "test_tcb_chain"
-tcb_info = "test_tcb_info"
-qe_identity_issuer_chain = "test_qe_chain"
-qe_identity = "test_qe_identity"
-"#;
-            
-            let config: CollateralConfig = toml::from_str(toml_content).expect("Failed to parse minimal TOML");
-            
-            // Verify config parsing
-            assert_eq!(config.major_version, None); // Should use default
-            assert_eq!(config.minor_version, None); // Should use default
-            assert_eq!(config.pck_crl_size, Some(100));
-            assert_eq!(config.pck_crl_issuer_chain, "test_chain");
-            
-            // Test building packed collateral from minimal config
-            match build_packed_collateral_from_toml(&config) {
-                Ok(packed_data) => {
-                    assert!(packed_data.len() >= 4, "Minimal packed data too small");
-                    let major_version = u16::from_le_bytes([packed_data[0], packed_data[1]]);
-                    let minor_version = u16::from_le_bytes([packed_data[2], packed_data[3]]);
-                    assert_eq!(major_version, 3);
-                    assert_eq!(minor_version, 0);
-                    println!("✅ Successfully built packed collateral from minimal config ({} bytes)", packed_data.len());
-                }
-                Err(e) => {
-                    panic!("Failed to build packed collateral from minimal config: {}", e);
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod policy_collateral_tests {
-    use super::*;
-
-    #[test]
-    fn test_collateral_priority_system() {
-        println!("=== Testing Collateral Priority System ===");
-        
-        // Clear any existing collateral state for this test
-        // Note: We can't easily reset INIT.call_once(), so this test shows current behavior
+    fn test_collateral_initialization() {
+        println!("=== Testing Collateral Initialization ===");
         
         // Test that get_collateral_size() triggers initialization
         let size = get_collateral_size();
         println!("Current collateral size: {} bytes", size);
         
-        // This should be > 0 since we should load either policy, TOML, or hardcoded data
+        // This should be > 0 since we should load either policy or hardcoded data
         assert!(size > 0, "Collateral should be loaded from at least hardcoded data");
         
-        println!("✅ Collateral priority system test passed!");
-        println!("   Priority order: 1) Policy files  2) Standalone TOML  3) Hardcoded data");
+        println!("✅ Collateral initialization test passed!");
     }
 
     #[test]
     fn test_init_collateral_from_policy_data() {
-        println!("=== Testing init_collateral_from_policy with policy data ===");
+        // Test with a minimal valid policy that includes collateral
+        let policy_with_collateral = r#"
+{
+    "id": "12345678-1234-5678-9abc-123456789012",
+    "policy": [],
+    "collateral": {
+        "major_version": 3,
+        "minor_version": 0,
+        "pck_crl_issuer_chain": "-----BEGIN CERTIFICATE-----\ntest_pck_crl_issuer_chain\n-----END CERTIFICATE-----",
+        "root_ca_crl": "-----BEGIN X509 CRL-----\ntest_root_ca_crl\n-----END X509 CRL-----",
+        "pck_crl_size": 1000,
+        "pck_crl": "-----BEGIN X509 CRL-----\ntest_pck_crl\n-----END X509 CRL-----",
+        "tcb_info_issuer_chain": "-----BEGIN CERTIFICATE-----\ntest_tcb_info_issuer_chain\n-----END CERTIFICATE-----",
+        "tcb_info": "{\"test\": \"tcb_info\"}",
+        "qe_identity_issuer_chain": "-----BEGIN CERTIFICATE-----\ntest_qe_identity_issuer_chain\n-----END CERTIFICATE-----",
+        "qe_identity": "{\"test\": \"qe_identity\"}"
+    }
+}
+"#;
+
+        // Test initialization from policy data that contains collateral
+        let success = init_collateral_from_policy(policy_with_collateral.as_bytes());
         
-        // Read the actual policy.toml content - try multiple relative paths
-        let policy_paths = [
-            "../../config/policy.toml",
-            "../../src/policy/test/policy.toml",
-        ];
-        
-        let mut policy_content = None;
-        for path in &policy_paths {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                policy_content = Some(content);
-                break;
-            }
-        }
-        
-        let policy_content = policy_content.expect("Failed to find policy.toml in any of the expected paths");
-        let policy_bytes = policy_content.as_bytes();
-        
-        // Test initialization from policy data
-        let success = init_collateral_from_policy(policy_bytes);
+        // Should succeed either with collateral or fallback to hardcoded
         assert!(success, "init_collateral_from_policy should succeed");
         
         // Verify collateral was loaded
         let size = get_collateral_size();
-        println!("Collateral initialized with {} bytes", size);
-        assert!(size > 0, "Collateral should be loaded from policy data");
+        assert!(size > 0, "Collateral should be loaded");
         
-        println!("✅ Successfully initialized collateral from policy data!");
+        // Test with policy that has no collateral section
+        let policy_without_collateral = r#"
+{
+    "id": "12345678-1234-5678-9abc-123456789012",
+    "policy": []
+}
+"#;
+        
+        let success2 = init_collateral_from_policy(policy_without_collateral.as_bytes());
+        assert!(success2, "Should succeed and use hardcoded data when no collateral in policy");
         
         // Test with invalid policy data
         let invalid_policy = b"invalid policy data";
-        let success2 = init_collateral_from_policy(invalid_policy);
-        assert!(success2, "Should still succeed and fall back to default initialization");
-        
-        println!("✅ Fallback to default initialization works correctly!");
+        let success3 = init_collateral_from_policy(invalid_policy);
+        assert!(success3, "Should still succeed and fall back to hardcoded data");
     }
 }
 

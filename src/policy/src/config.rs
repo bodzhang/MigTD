@@ -82,16 +82,90 @@ impl MigPolicy {
     }
 }
 
-// Minimal extension for collateral support (for verify.rs compatibility)
+// Collateral configuration for TOML parsing (moved from attestation crate)
 #[derive(Debug, Deserialize, Clone)]
 pub struct CollateralConfig {
+    pub major_version: Option<u16>,
+    pub minor_version: Option<u16>,
     pub pck_crl_issuer_chain: String,
     pub root_ca_crl: String,
+    pub pck_crl_size: Option<u32>, // Optional size field from TOML
     pub pck_crl: String,
     pub tcb_info_issuer_chain: String,
     pub tcb_info: String,
     pub qe_identity_issuer_chain: String,
     pub qe_identity: String,
+}
+
+impl CollateralConfig {
+    /// Build packed collateral data from this configuration
+    pub fn build_packed_collateral(&self) -> Result<Vec<u8>, &'static str> {
+        let mut result = Vec::new();
+        
+        // Create the header (PackedCollateral structure)
+        let major_version = self.major_version.unwrap_or(3);
+        let minor_version = self.minor_version.unwrap_or(0);
+        
+        // Convert string data to bytes and add null terminators to match hardcoded format
+        let mut pck_crl_issuer_chain_bytes = self.pck_crl_issuer_chain.as_bytes().to_vec();
+        pck_crl_issuer_chain_bytes.push(0); // Add null terminator
+        
+        let mut root_ca_crl_bytes = self.root_ca_crl.as_bytes().to_vec();
+        root_ca_crl_bytes.push(0); // Add null terminator
+        
+        let mut pck_crl_bytes = self.pck_crl.as_bytes().to_vec();
+        pck_crl_bytes.push(0); // Add null terminator
+        
+        let mut tcb_info_issuer_chain_bytes = self.tcb_info_issuer_chain.as_bytes().to_vec();
+        tcb_info_issuer_chain_bytes.push(0); // Add null terminator
+        
+        let mut tcb_info_bytes = self.tcb_info.as_bytes().to_vec();
+        // Add null terminator for quote verification
+        tcb_info_bytes.push(0);
+        
+        let mut qe_identity_issuer_chain_bytes = self.qe_identity_issuer_chain.as_bytes().to_vec();
+        qe_identity_issuer_chain_bytes.push(0); // Add null terminator
+        
+        let mut qe_identity_bytes = self.qe_identity.as_bytes().to_vec();
+        // Add null terminator for quote verification
+        qe_identity_bytes.push(0);
+        
+        // Optional validation: check if pck_crl_size matches actual size
+        if let Some(expected_size) = self.pck_crl_size {
+            if pck_crl_bytes.len() != expected_size as usize {
+                // Warning: PCK CRL size mismatch
+            }
+        }
+        
+        // Build PackedCollateral header
+        result.extend_from_slice(&major_version.to_le_bytes());
+        result.extend_from_slice(&minor_version.to_le_bytes());
+        result.extend_from_slice(&(pck_crl_issuer_chain_bytes.len() as u32).to_le_bytes());
+        result.extend_from_slice(&(root_ca_crl_bytes.len() as u32).to_le_bytes());
+        result.extend_from_slice(&(pck_crl_bytes.len() as u32).to_le_bytes());
+        result.extend_from_slice(&(tcb_info_issuer_chain_bytes.len() as u32).to_le_bytes());
+        result.extend_from_slice(&(tcb_info_bytes.len() as u32).to_le_bytes());
+        result.extend_from_slice(&(qe_identity_issuer_chain_bytes.len() as u32).to_le_bytes());
+        result.extend_from_slice(&(qe_identity_bytes.len() as u32).to_le_bytes());
+        
+        // Append data in the order specified by tdtools:
+        // [pck_crl_issuer_chain bytes]
+        // [root_ca_crl bytes]
+        // [pck_crl bytes]
+        // [tcb_info_issuer_chain bytes]
+        // [tcb_info bytes]
+        // [qe_identity_issuer_chain bytes]
+        // [qe_identity bytes]
+        result.extend_from_slice(&pck_crl_issuer_chain_bytes);
+        result.extend_from_slice(&root_ca_crl_bytes);
+        result.extend_from_slice(&pck_crl_bytes);
+        result.extend_from_slice(&tcb_info_issuer_chain_bytes);
+        result.extend_from_slice(&tcb_info_bytes);
+        result.extend_from_slice(&qe_identity_issuer_chain_bytes);
+        result.extend_from_slice(&qe_identity_bytes);
+        
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -812,5 +886,49 @@ policy = []
         // Compare policy_001 structure
         assert_eq!(json_001_policy.blocks.len(), toml_001_policy.blocks.len(), 
                    "Policy_001 block count should match between JSON and TOML");
+    }
+
+    #[test]
+    fn test_collateral_config_parsing_and_building() {
+        // Test TOML parsing of CollateralConfig
+        let toml_content = r#"
+major_version = 3
+minor_version = 0
+pck_crl_issuer_chain = "-----BEGIN CERTIFICATE-----\ntest_pck_crl_issuer_chain\n-----END CERTIFICATE-----"
+root_ca_crl = "-----BEGIN X509 CRL-----\ntest_root_ca_crl\n-----END X509 CRL-----"
+pck_crl_size = 1000
+pck_crl = "-----BEGIN X509 CRL-----\ntest_pck_crl\n-----END X509 CRL-----"
+tcb_info_issuer_chain = "-----BEGIN CERTIFICATE-----\ntest_tcb_info_issuer_chain\n-----END CERTIFICATE-----"
+tcb_info = "{\"test\": \"tcb_info\"}"
+qe_identity_issuer_chain = "-----BEGIN CERTIFICATE-----\ntest_qe_identity_issuer_chain\n-----END CERTIFICATE-----"
+qe_identity = "{\"test\": \"qe_identity\"}"
+"#;
+
+        // Parse the CollateralConfig from TOML
+        let config: CollateralConfig = toml::from_str(toml_content)
+            .expect("Failed to parse CollateralConfig from TOML");
+
+        // Verify parsing
+        assert_eq!(config.major_version, Some(3));
+        assert_eq!(config.minor_version, Some(0));
+        assert_eq!(config.pck_crl_size, Some(1000));
+        assert!(config.pck_crl_issuer_chain.contains("test_pck_crl_issuer_chain"));
+        assert!(config.tcb_info.contains("tcb_info"));
+
+        // Test building packed collateral
+        let packed_data = config.build_packed_collateral()
+            .expect("Failed to build packed collateral");
+
+        // Verify the packed data structure
+        assert!(packed_data.len() >= 36, "Packed data too small (header should be 36 bytes)");
+        
+        // Verify header fields
+        let major_version = u16::from_le_bytes([packed_data[0], packed_data[1]]);
+        let minor_version = u16::from_le_bytes([packed_data[2], packed_data[3]]);
+        assert_eq!(major_version, 3);
+        assert_eq!(minor_version, 0);
+
+        // Verify we have substantial data
+        assert!(packed_data.len() > 200, "Packed data should contain all certificate chains");
     }
 }
