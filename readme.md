@@ -122,6 +122,20 @@ To use vmcall-raw for the guest-host communication:
 cargo image --no-default-features --features stack-guard,vmcall-raw
 ```
 
+#### Build IGVM Format Images
+
+To build a MigTD binary in IGVM format instead of the default TDVF format, with vmcall-raw feature, for Azure environment:
+```
+cargo image --no-default-features --features stack-guard,vmcall-raw --image-format igvm
+```
+
+IGVM images are generated as `migtd.igvm` files instead of `migtd.bin`. Note that current IGVM format images build process skip the policy enrollment step.
+
+You can combine IGVM format with other options:
+```
+cargo image --image-format igvm --no-default-features --features stack-guard,virtio-serial,test_disable_ra_and_accept_all --log-level info
+```
+
 ### Generate SERVTD_INFO_HASH
 
 `SERVTD_HASH_INFO` can be calculated based on a given MigTD image and a TD configuration such as
