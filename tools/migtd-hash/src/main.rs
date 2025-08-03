@@ -24,6 +24,9 @@ struct Config {
     /// The input MigTD image enables the `test_disable_ra_and_accept_all` feature
     #[clap(short, long)]
     pub test_disable_ra_and_accept_all: bool,
+    /// The input MigTD image format
+    #[clap(short = 'f', long = "image-format", default_value = "tdvf")]
+    pub image_format: String,
 }
 
 fn main() {
@@ -38,7 +41,7 @@ fn main() {
         exit(1);
     });
 
-    let hash = calculate_servtd_hash(&manifest, image, config.test_disable_ra_and_accept_all)
+    let hash = calculate_servtd_hash(&manifest, image, &config.image_format, config.test_disable_ra_and_accept_all)
         .unwrap_or_else(|e| {
             eprintln!("Failed to calculate hash: {:?}", e);
             exit(1);

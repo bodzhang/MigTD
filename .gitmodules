@@ -3,4 +3,4 @@
 	url = https://github.com/intel/linux-sgx.git
 [submodule "deps/td-shim"]
 	path = deps/td-shim
-	url = https://github.com/confidential-containers/td-shim
+	url = https://github.com/agokarn/td-shim.git

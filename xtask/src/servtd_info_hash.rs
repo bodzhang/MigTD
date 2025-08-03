@@ -28,6 +28,9 @@ pub(crate) struct ServtdInfoHashArgs {
     output: Option<PathBuf>,
     #[clap(short, long)]
     test_disable_ra_and_accept_all: bool,
+    /// The input MigTD image format
+    #[clap(short = 'f', long = "image-format", default_value = "tdvf")]
+    pub image_format: String,
 }
 
 impl ServtdInfoHashArgs {
@@ -35,7 +38,8 @@ impl ServtdInfoHashArgs {
         let sh = Shell::new()?;
         let cmd = cmd!(sh, "cargo run -p migtd-hash  -- ")
             .args(&["--image", self.image()?.to_str().unwrap()])
-            .args(&["--manifest", self.servtd_info()?.to_str().unwrap()]);
+            .args(&["--manifest", self.servtd_info()?.to_str().unwrap()])
+            .args(&["--image-format", &self.image_format]);
 
         let cmd = if self.output.is_some() {
             cmd.args(&["--output-file", self.output()?.to_str().unwrap()])

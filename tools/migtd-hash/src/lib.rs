@@ -21,6 +21,7 @@ const MIGTD_IMAGE_SIZE: u64 = 0x100_0000;
 pub fn calculate_servtd_hash(
     manifest: &[u8],
     mut image: File,
+    image_format: &str,
     is_ra_disabled: bool,
 ) -> Result<Vec<u8>, Error> {
     // Initialize the configurable fields of TD info structure.
@@ -35,16 +36,18 @@ pub fn calculate_servtd_hash(
     };
 
     // Calculate the MRTD with MigTD image
-    td_info.build_mrtd(&mut image, MIGTD_IMAGE_SIZE);
+    td_info.build_mrtd(&mut image, image_format, MIGTD_IMAGE_SIZE);
     // Calculate RTMR0 and RTMR1
     td_info.build_rtmr_with_seperator(0);
-    // Calculate RTMR2 with CFV
-    let mut cfv = vec![0u8; CONFIG_VOLUME_SIZE];
-    image.seek(SeekFrom::Start(0))?;
-    image.read(&mut cfv)?;
-    td_info
-        .rtmr2
-        .copy_from_slice(rtmr2(&cfv, is_ra_disabled)?.as_slice());
+    if image_format != "igvm" {
+        // Calculate RTMR2 with CFV
+        let mut cfv = vec![0u8; CONFIG_VOLUME_SIZE];
+        image.seek(SeekFrom::Start(0))?;
+        image.read(&mut cfv)?;
+        td_info
+            .rtmr2
+            .copy_from_slice(rtmr2(&cfv, is_ra_disabled)?.as_slice());
+    }
 
     // Convert the TD info structure to bytes.
     let mut buffer = [0u8; size_of::<TdInfoStruct>()];
