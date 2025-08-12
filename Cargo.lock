@@ -665,14 +665,9 @@ dependencies = [
  "anyhow",
  "clap",
  "crypto",
- "igvm",
- "igvm_defs",
  "migtd",
  "serde_json",
- "td-shim-interface",
  "td-shim-tools",
- "thiserror",
- "zerocopy",
 ]
 
 [[package]]
