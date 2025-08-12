@@ -1262,7 +1262,6 @@ dependencies = [
  "scroll",
  "spin 0.9.8",
  "x86_64",
- "zerocopy",
 ]
 
 [[package]]

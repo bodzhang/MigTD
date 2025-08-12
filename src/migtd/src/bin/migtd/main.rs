@@ -43,7 +43,6 @@ const TAGGED_EVENT_ID_POLICY: u32 = 0x1;
 const TAGGED_EVENT_ID_ROOT_CA: u32 = 0x2;
 const TAGGED_EVENT_ID_TEST: u32 = 0x32;
 
-const TDINFO_SIZE: usize = core::mem::size_of::<tdreport::TdInfo>();
 
 #[no_mangle]
 pub extern "C" fn main() {
