@@ -127,7 +127,7 @@ pub fn query() -> Result<()> {
 }
 
 pub async fn wait_for_request() -> Result<MigrationInformation> {
-    log::info!("Waiting for migration request from VMM");
+    //log::info!("Waiting for migration request from VMM");
     
     #[cfg(feature = "vmcall-raw")]
     {

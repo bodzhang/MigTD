@@ -13,3 +13,7 @@ migtd = { path = "../../src/migtd", default-features = false }
 serde_json = "1.0"
 td-shim-tools = { path = "../../deps/td-shim/td-shim-tools", default-features = false, features = ["tee"] }
 td-shim-interface = { path = "../../deps/td-shim/td-shim-interface" }
+igvm = "0.3.4"
+igvm_defs = "0.3.4"
+thiserror = "1.0"
+zerocopy = { version = "0.7", features = ["derive"] } # Include derive if Immutable is used

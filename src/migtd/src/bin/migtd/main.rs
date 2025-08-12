@@ -17,6 +17,9 @@ use migtd::migration::session::*;
 use migtd::migration::MigrationResult;
 use migtd::{config, event_log, migration};
 use spin::Mutex;
+use sha2::{Digest, Sha384};
+use tdx_tdcall::tdreport;
+use zerocopy::AsBytes;
 
 const MIGTD_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -24,6 +27,8 @@ const MIGTD_VERSION: &str = env!("CARGO_PKG_VERSION");
 const TAGGED_EVENT_ID_POLICY: u32 = 0x1;
 const TAGGED_EVENT_ID_ROOT_CA: u32 = 0x2;
 const TAGGED_EVENT_ID_TEST: u32 = 0x32;
+
+const TDINFO_SIZE: usize = core::mem::size_of::<tdreport::TdInfo>();
 
 #[no_mangle]
 pub extern "C" fn main() {
@@ -43,6 +48,9 @@ pub fn runtime_main() {
     // Measure the input data
     do_measurements();
 
+    // calculate the hash of the TD info and log it
+    print_td_info_hash();
+
     migration::event::register_callback();
 
     // Query the capability of VMM
@@ -59,6 +67,7 @@ pub fn runtime_main() {
 
 fn basic_info() {
     info!("MigTD Version - {}\n", MIGTD_VERSION);
+    info!("ACC Hello World MigTD\n");
 }
 
 fn do_measurements() {
@@ -75,6 +84,20 @@ fn do_measurements() {
 
     // Get root certificate from CFV and measure it into RMTR
     get_ca_and_measure(event_log);
+}
+
+fn print_td_info_hash() {
+    let tdx_report = tdreport::tdcall_report(&[0u8; tdreport::TD_REPORT_ADDITIONAL_DATA_SIZE]);
+    info!("tdx_report: {:?}", tdx_report);
+
+    let td_info = tdx_report.unwrap().td_info;
+    info!("td_info: {:?}", td_info);
+
+    let mut hasher = Sha384::new();
+    hasher.update(td_info.as_bytes());
+
+    let hash = hasher.finalize();
+    info!("TD Info Hash: {:x}", hash);
 }
 
 fn measure_test_feature(event_log: &mut [u8]) {
