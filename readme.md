@@ -126,14 +126,14 @@ cargo image --no-default-features --features stack-guard,vmcall-raw
 
 To build a MigTD binary in IGVM format instead of the default TDVF format, with vmcall-raw feature, for Azure environment:
 ```
-cargo image --no-default-features --features stack-guard,vmcall-raw --image-format igvm
+cargo image --no-default-features --features stack-guard,vmcall-raw --image-format igvm --fw-top 0x3000000
 ```
 
 IGVM images are generated as `migtd.igvm` files instead of `migtd.bin`. Note that current IGVM format images build process skip the policy enrollment step.
 
 You can combine IGVM format with other options:
 ```
-cargo image --image-format igvm --no-default-features --features stack-guard,virtio-serial,test_disable_ra_and_accept_all --log-level info
+cargo image --no-default-features --features vmcall-raw,stack-guard,main,test_disable_ra_and_accept_all --log-level info --image-format igvm --fw-top 0x3000000
 ```
 
 ### Generate SERVTD_INFO_HASH
