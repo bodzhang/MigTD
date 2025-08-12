@@ -19,7 +19,22 @@ use migtd::{config, event_log, migration};
 use spin::Mutex;
 use sha2::{Digest, Sha384};
 use tdx_tdcall::tdreport;
-use zerocopy::AsBytes;
+
+// Local trait to convert TdInfo to bytes without external dependency
+trait TdInfoAsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
+
+impl TdInfoAsBytes for tdreport::TdInfo {
+    fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const _ as *const u8,
+                core::mem::size_of::<tdreport::TdInfo>()
+            )
+        }
+    }
+}
 
 const MIGTD_VERSION: &str = env!("CARGO_PKG_VERSION");
 
