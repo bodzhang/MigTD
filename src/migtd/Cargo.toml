@@ -60,5 +60,5 @@ vmcall-raw = ["vmcall_raw"]
 test_heap_size = ["td-benchmark", "td-payload/test_heap_size"]
 test_stack_size = ["td-benchmark"]
 test_disable_ra_and_accept_all = ["attestation/test"] # Dangerous: can only be used for test purpose to bypass the remote attestation
-test_force_success_status = [] # Force migration status to always report success regardless of actual result
-test_force_unsupported_status = [] # Force migration status to always report unsupported regardless of actual result
+test_approve_all = [] # Force migration status to always report success regardless of actual result
+test_reject_all = [] # Force migration status to always report unsupported regardless of actual result

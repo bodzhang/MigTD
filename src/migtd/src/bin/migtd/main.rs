@@ -145,18 +145,19 @@ fn handle_pre_mig() {
  
                     // Determine the status based on enabled features
                     let status = {
-                        #[cfg(feature = "test_force_success_status")]
+                        #[cfg(feature = "test_approve_all")]
                         {
                             // Execute exchange_msk but ignore the result
                             let _result = exchange_msk(&request).await;
+                            info!("exchange_msk returned result: {}\n", _result);
                             MigrationResult::Success
                         }
-                        #[cfg(all(feature = "test_force_unsupported_status", not(feature = "test_force_success_status")))]
+                        #[cfg(feature = "test_reject_all")]
                         {
                             // Don't execute exchange_msk, just return Unsupported
                             MigrationResult::Unsupported
                         }
-                        #[cfg(not(any(feature = "test_force_success_status", feature = "test_force_unsupported_status")))]
+                        #[cfg(not(any(feature = "test_approve_all", feature = "test_reject_all")))]
                         {
                             // Normal behavior - execute and use the actual result
                             let exchange_result = exchange_msk(&request).await;
