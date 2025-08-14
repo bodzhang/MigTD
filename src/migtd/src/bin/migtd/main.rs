@@ -149,7 +149,10 @@ fn handle_pre_mig() {
                         {
                             // Execute exchange_msk but ignore the result
                             let _result = exchange_msk(&request).await;
-                            info!("exchange_msk returned result: {}\n", _result);
+                            match _result {
+                                Ok(()) => info!("exchange_msk returned: Success\n"),
+                                Err(e) => info!("exchange_msk returned error code: {}\n", e as u8),
+                            }
                             MigrationResult::Success
                         }
                         #[cfg(feature = "test_reject_all")]
