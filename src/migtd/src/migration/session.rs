@@ -14,10 +14,16 @@ use core::{future::poll_fn, mem::size_of, task::Poll};
 use event::VMCALL_SERVICE_FLAG;
 use lazy_static::lazy_static;
 use spin::Mutex;
+#[cfg(feature = "AzCVMEmu")]
+use td_payload_emu::mm::shared::SharedMemory;
+#[cfg(not(feature = "AzCVMEmu"))]
 use td_payload::mm::shared::SharedMemory;
+#[cfg(feature = "AzCVMEmu")]
+use tdx_tdcall_emu::{td_call, tdx, TdcallArgs};
+#[cfg(not(feature = "AzCVMEmu"))]
 use tdx_tdcall::{
     td_call,
-    tdx::{self, tdcall_servtd_wr},
+    tdx,
     TdcallArgs,
 };
 use zerocopy::AsBytes;
@@ -26,12 +32,6 @@ type Result<T> = core::result::Result<T, MigrationResult>;
 
 use super::{data::*, *};
 use crate::ratls;
-
-#[cfg(feature = "AzCVMEmu")]
-use tcp_transport::{self, TcpStream};
-
-#[cfg(feature = "AzCVMEmu")]
-use async_io::{AsyncRead, AsyncWrite};
 
 const TDCALL_STATUS_SUCCESS: u64 = 0;
 const TDCS_FIELD_MIG_DEC_KEY: u64 = 0x9810_0003_0000_0010;
@@ -133,12 +133,6 @@ pub fn query() -> Result<()> {
 }
 
 pub async fn wait_for_request() -> Result<MigrationInformation> {
-    #[cfg(feature = "AzCVMEmu")]
-    {
-        // AzCVMEmu mode should never call this function
-        return Err(MigrationResult::Unsupported);
-    }
-
     #[cfg(feature = "vmcall-raw")]
     {
         let num_rsp_pages: usize = 1;
@@ -211,7 +205,7 @@ pub async fn wait_for_request() -> Result<MigrationInformation> {
         .await
     }
 
-    #[cfg(all(not(feature = "vmcall-raw"), not(feature = "AzCVMEmu")))]
+    #[cfg(not(feature = "vmcall-raw"))]
     {
         // Allocate shared page for command and response buffer
         let mut cmd_mem = SharedMemory::new(1).ok_or(MigrationResult::OutOfResource)?;
@@ -419,41 +413,6 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
 
     let transport;
 
-    #[cfg(feature = "AzCVMEmu")]
-    {
-        
-        // For AzCVMEmu, use TCP transport with custom destination IP/port if provided
-        // Default to localhost:8000+mig_request_id if not specified
-        let default_host = "127.0.0.1";
-        let default_port = 8000u16.saturating_add(info.mig_info.mig_request_id as u16 % 1000);
-        
-        // Use provided destination IP or fall back to default
-        let host = info.destination_ip.as_deref().unwrap_or(default_host);
-        // Use provided destination port or fall back to default
-        let port = info.destination_port.unwrap_or(default_port);
-        
-        log::info!("Using TCP transport with {}:{}", host, port);
-        
-        if info.is_src() {
-            // Source MigTD connects to destination
-            log::info!("Source MigTD connecting to {}:{}", host, port);
-
-            transport = tcp_transport::TcpStream::connect_to(host, port)
-                .await
-                .map_err(|_| MigrationResult::NetworkError)?;
-
-            log::info!("TCP connection established");
-        } else {
-            // Destination MigTD listens for connection
-            log::info!("Destination MigTD listening on port {}", port);
-            transport = tcp_transport::TcpStream::accept_on(port)
-                .await
-                .map_err(|_| MigrationResult::NetworkError)?;           
-            log::info!("TCP connection accepted");
-        }
-    }
-
-    #[cfg(not(feature = "AzCVMEmu"))]
     #[cfg(feature = "vmcall-raw")]
     {
         use vmcall_raw::stream::VmcallRaw;
@@ -467,7 +426,6 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
         transport = vmcall_raw_instance;
     }
 
-    #[cfg(not(feature = "AzCVMEmu"))]
     #[cfg(feature = "virtio-serial")]
     {
         use virtio_serial::VirtioSerialPort;
@@ -478,7 +436,6 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
         transport = port;
     };
 
-    #[cfg(not(feature = "AzCVMEmu"))]
     #[cfg(not(feature = "virtio-serial"))]
     #[cfg(not(feature = "vmcall-raw"))]
     {
@@ -504,86 +461,31 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
     };
 
     let mut remote_information = ExchangeInformation::default();
-    
-    //Temporarily skip MSK retrieval in AzCVMEmu
-    #[cfg(feature = "AzCVMEmu")]
-    let mut exchange_information = {
-        log::warn!("Using mock ExchangeInformation in AzCVMEmu mode");
-        ExchangeInformation::default()
-    };
-
-    #[cfg(not(feature = "AzCVMEmu"))]
     let mut exchange_information = exchange_info(&info)?;
 
     // Establish TLS layer connection and negotiate the MSK
     if info.is_src() {
         // TLS client
-        #[cfg(feature = "AzCVMEmu")]
-        log::info!("Creating RATLS client");
         let mut ratls_client =
             ratls::client(transport).map_err(|_| MigrationResult::SecureSessionError)?;
 
         // MigTD-S send Migration Session Forward key to peer
-        #[cfg(feature = "AzCVMEmu")]
-        {
-            log::debug!("About to send MSK to peer");
-            log::info!("ExchangeInformation size: {}", size_of::<ExchangeInformation>());
-            log::debug!("ExchangeInformation bytes ptr: {:?}", exchange_information.as_bytes().as_ptr());
-            log::debug!("ExchangeInformation bytes len: {}", exchange_information.as_bytes().len());
-            log::debug!("About to call ratls_client.read()");
-        }
-        // Remove timeout for AzCVMEmu mode to avoid crashes
-        #[cfg(feature = "AzCVMEmu")]
-        let write_result = ratls_client.write(exchange_information.as_bytes()).await;        
-        #[cfg(not(feature = "AzCVMEmu"))]
-        let write_result = with_timeout(
+        with_timeout(
             TLS_TIMEOUT,
             ratls_client.write(exchange_information.as_bytes()),
-        ).await?;
-        
-        match write_result {
-            Ok(_) => {
-                #[cfg(feature = "AzCVMEmu")]
-                log::info!("ratls_client.write() completed successfully");
-            }
-            Err(e) => {
-                #[cfg(feature = "AzCVMEmu")]
-                log::error!("ratls_client.write() failed with error: {:?}", e);
-                #[cfg(not(feature = "AzCVMEmu"))]
-                let _ = e; // Suppress unused variable warning
-                return Err(MigrationResult::SecureSessionError);
-            }
-        }
-        #[cfg(not(feature = "AzCVMEmu"))]
+        )
+        .await??;
         let size = with_timeout(
             TLS_TIMEOUT,
             ratls_client.read(remote_information.as_bytes_mut()),
         )
-        .await??;     
-        #[cfg(feature = "AzCVMEmu")]
-        let size = match ratls_client.read(remote_information.as_bytes_mut()).await {
-            Ok(size) => {
-                log::info!("ratls_client.read() completed successfully, read {} bytes", size);
-                size
-            }
-            Err(e) => {
-                log::error!("ratls_client.read() failed with error: {:?}", e);
-                return Err(MigrationResult::SecureSessionError);
-            }
-        };
+        .await??;
         if size < size_of::<ExchangeInformation>() {
             return Err(MigrationResult::NetworkError);
         }
-        #[cfg(feature = "AzCVMEmu")]
-        log::info!("Shutting down RATLS client transport");
-        ratls_client.transport_mut().shutdown().await
-            .map_err(|_e| MigrationResult::InvalidParameter)?;
-
-        #[cfg(not(feature = "AzCVMEmu"))]
         #[cfg(all(not(feature = "virtio-serial"), not(feature = "vmcall-raw")))]
         ratls_client.transport_mut().shutdown().await?;
 
-        #[cfg(not(feature = "AzCVMEmu"))]
         #[cfg(feature = "vmcall-raw")]
         ratls_client
             .transport_mut()
@@ -592,68 +494,25 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
             .map_err(|_e| MigrationResult::InvalidParameter)?;
     } else {
         // TLS server
-        #[cfg(feature = "AzCVMEmu")]
-        log::info!("Creating RATLS server");
         let mut ratls_server =
             ratls::server(transport).map_err(|_| MigrationResult::SecureSessionError)?;
 
-        #[cfg(feature = "AzCVMEmu")]
-        log::debug!("About to call ratls_server.write()");
-        
-        // Remove timeout for AzCVMEmu mode to avoid crashes
-        #[cfg(feature = "AzCVMEmu")]
-        let write_result = ratls_server.write(exchange_information.as_bytes()).await;        
-        #[cfg(not(feature = "AzCVMEmu"))]
-        let write_result = with_timeout(
+        with_timeout(
             TLS_TIMEOUT,
             ratls_server.write(exchange_information.as_bytes()),
-        ).await?;
-        
-        match write_result {
-            Ok(_) => {
-                #[cfg(feature = "AzCVMEmu")]
-                log::info!("ratls_server.write() completed successfully");
-            }
-            Err(e) => {
-                #[cfg(feature = "AzCVMEmu")]
-                log::error!("ratls_server.write() failed with error: {:?}", e);
-                #[cfg(not(feature = "AzCVMEmu"))]
-                let _ = e; // Suppress unused variable warning
-                return Err(MigrationResult::SecureSessionError);
-            }
-        }
-        
-        #[cfg(feature = "AzCVMEmu")]
-        log::debug!("About to call ratls_server.read()");
-        #[cfg(not(feature = "AzCVMEmu"))]
+        )
+        .await??;
         let size = with_timeout(
             TLS_TIMEOUT,
             ratls_server.read(remote_information.as_bytes_mut()),
         )
         .await??;
-        #[cfg(feature = "AzCVMEmu")]
-        let size = match ratls_server.read(remote_information.as_bytes_mut()).await {
-            Ok(size) => {
-                log::info!("ratls_server.read() completed successfully, read {} bytes", size);
-                size
-            }
-            Err(e) => {
-                log::error!("ratls_server.read() failed with error: {:?}", e);
-                return Err(MigrationResult::SecureSessionError);
-            }
-        };
         if size < size_of::<ExchangeInformation>() {
             return Err(MigrationResult::NetworkError);
         }
-        #[cfg(feature = "AzCVMEmu")]
-        ratls_server.transport_mut().shutdown().await
-            .map_err(|_e| MigrationResult::InvalidParameter)?;
-
-        #[cfg(not(feature = "AzCVMEmu"))]
         #[cfg(all(not(feature = "virtio-serial"), not(feature = "vmcall-raw")))]
         ratls_server.transport_mut().shutdown().await?;
 
-        #[cfg(not(feature = "AzCVMEmu"))]
         #[cfg(feature = "vmcall-raw")]
         ratls_server
             .transport_mut()
@@ -663,11 +522,7 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
     }
 
     let mig_ver = cal_mig_version(info.is_src(), &exchange_information, &remote_information)?;
-    //temporarily skip tdcall
-    #[cfg(not(feature = "AzCVMEmu"))]
     set_mig_version(info, mig_ver)?;
-    //temporarily skip MSK injection
-    #[cfg(not(feature = "AzCVMEmu"))]
     write_msk(&info.mig_info, &remote_information.key)?;
 
     log::info!("Set MSK and report status\n");
@@ -777,7 +632,7 @@ fn cal_mig_version(
 }
 
 fn set_mig_version(info: &MigrationInformation, mig_ver: u16) -> Result<()> {
-    tdcall_servtd_wr(
+    tdx::tdcall_servtd_wr(
         info.mig_info.binding_handle,
         TDCS_FIELD_MIG_VERSION,
         mig_ver as u64,

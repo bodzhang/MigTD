@@ -29,11 +29,16 @@ r-efi = "3.2.0"
 scroll = { version = "0.10", default-features = false, features = ["derive"]}
 spin = "0.9.2"
 tdx-tdcall = { path = "../../deps/td-shim/tdx-tdcall"}
+# Use emulated tdx-tdcall for AzCVMEmu feature
+tdx-tdcall-emu = { path = "../../deps/td-shim-AzCVMEmu/tdx-tdcall", optional = true, package = "tdx-tdcall-emu" }
 td-logger = { path = "../../deps/td-shim/td-logger", features = ["tdx"] }
 td-layout = { path = "../../deps/td-shim/td-layout"}
 td-loader = { path = "../../deps/td-shim/td-loader"}
 td-paging = { path = "../../deps/td-shim/td-paging"}
-td-payload = { path = "../../deps/td-shim/td-payload", features = ["tdx"] }
+# td-payload provides SharedMemory and other primitives; in AzCVMEmu we replace it
+# with a lightweight emulated implementation that works in host mode.
+td-payload = { path = "../../deps/td-shim/td-payload", features = ["tdx"], optional = true }
+td-payload-emu = { path = "../../deps/td-shim-AzCVMEmu/td-payload-emu", optional = true }
 td-shim-interface = { path = "../../deps/td-shim/td-shim-interface", optional = false }
 td-shim = { path = "../../deps/td-shim/td-shim", optional = false }
 td-shim-interface-emu = { path = "../../deps/td-shim-AzCVMEmu/td-shim-interface", optional = true, features = ["std"] }
@@ -41,8 +46,7 @@ td-shim-emu = { path = "../../deps/td-shim-AzCVMEmu/td-shim", optional = true }
 virtio = { path="../devices/virtio" }
 vsock = { path="../devices/vsock", default-features = false, optional = true }
 virtio_serial = { path="../devices/virtio_serial", optional = true }
-vmcall_raw = { path="../devices/vmcall_raw", optional = true }
-tcp_transport = { path="../devices/tcp_transport", optional = true }
+vmcall_raw = { path="../devices/vmcall_raw", optional = true, default-features = false }
 env_logger = { version = "0.10.0", optional = true }
 tokio = { version = "1.0", features = ["rt", "rt-multi-thread"], optional = true }
 az-tdx-vtpm = { version = "0.7", optional = true }
@@ -55,10 +59,25 @@ td-benchmark = { path = "../../deps/td-shim/devtools/td-benchmark", default-feat
 
 [features]
 default = ["virtio-vsock"]
-AzCVMEmu = ["main", "td-shim-interface-emu", "td-shim-emu", "az-tdx-vtpm", "tcp_transport/AzCVMEmu", "tcp_transport/std", "env_logger", "tokio", "attestation/AzCVMEmu", "crypto/AzCVMEmu", "policy/AzCVMEmu"]
+AzCVMEmu = [
+	"main",                     # Include main feature (and thus td-payload)
+	"attestation/AzCVMEmu",     # Include attestation AzCVMEmu-specific features
+	"crypto/AzCVMEmu",
+	"policy/AzCVMEmu",
+	"vmcall-raw",
+	"vmcall_raw/AzCVMEmu",
+	"td-shim-interface-emu",
+	"td-shim-emu",
+	"tdx-tdcall-emu",
+	"az-tdx-vtpm",
+	"td-payload-emu",           # Use emulated td-payload that inherits from real one
+	"env_logger",
+	"tokio",
+]
 cet-shstk = ["td-payload/cet-shstk"]
 coverage = ["minicov"]
-main = ["attestation", "policy/log"]
+# In non-emulation builds, use the real td-payload crate
+main = ["attestation", "policy/log", "td-payload"]
 stack-guard = ["td-payload/stack-guard"]
 virtio-vsock = ["vsock/virtio-vsock"]
 virtio-serial = ["virtio_serial"]
