@@ -12,3 +12,9 @@ crypto = { path = "../../src/crypto" }
 migtd = { path = "../../src/migtd", default-features = false }
 serde_json = "1.0"
 td-shim-tools = { path = "../../deps/td-shim/td-shim-tools", default-features = false, features = ["tee"] }
+td-shim-interface = { path = "../../deps/td-shim/td-shim-interface" }
+igvm = "0.3.4"
+igvm_defs = "0.3.4"
+zerocopy = { version = "0.8.14", features = ["derive"] }
+thiserror = { version = "2", default-features = false }
+sha2 = "0.10"
