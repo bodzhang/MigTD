@@ -30,6 +30,9 @@ struct Config {
     /// Indicator to calculate final servtd_hash instead of servtd_info_hash (default false)
     #[clap(short, long)]
     pub calc_servtd_hash: bool,
+    /// The input MigTD image format
+    #[clap(short = 'f', long = "image-format", default_value = "tdvf")]
+    pub image_format: String,
 }
 
 fn main() {
@@ -49,6 +52,7 @@ fn main() {
     let servtd_info_hash = calculate_servtd_info_hash(
         &manifest,
         image,
+        &config.image_format,
         config.test_disable_ra_and_accept_all,
         servtd_attr,
     )
