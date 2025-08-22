@@ -38,63 +38,60 @@ fn migration_result_code(e: &MigrationResult) -> u8 {
 
 
 /// AzCVMEmu entry point - standard Rust main function
-pub fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize standard Rust logging for AzCVMEmu mode with info level by default
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     
     // Init internal heap
     #[cfg(not(feature = "test_disable_ra_and_accept_all"))]
-    attestation::attest_init_heap();
+    attestation::attest_init_heap()
+        .ok_or("Failed to initialize attestation heap")?;
     
     // Initialize event log emulation
     td_shim_emu::event_log::init_event_log();
+    
     // Parse command line arguments first so `-h` works without env vars/files
-    parse_commandline_args();
+    parse_commandline_args()?;
+    
     // Initialize emulation layer (requires env vars/files); skipped if `-h` exited
-    initialize_emulation();
+    initialize_emulation()?;
     
     // Continue with the main runtime flow
-    runtime_main_emu();
+    runtime_main_emu()?;
+    
+    Ok(())
 }
 
 /// Initialize emulation layer
-fn initialize_emulation() {
+fn initialize_emulation() -> Result<(), Box<dyn std::error::Error>> {
     // Get file paths from environment variables
-    let policy_file_path = match env::var("MIGTD_POLICY_FILE") {
-        Ok(path) => {
-            log::info!("MIGTD_POLICY_FILE set to: {}", path);
-            path
-        },
-        Err(_) => {
+    let policy_file_path = env::var("MIGTD_POLICY_FILE")
+        .map_err(|_| {
             println!("MIGTD_POLICY_FILE environment variable not set");
             print_usage();
-            process::exit(1);
-        }
-    };
+            "MIGTD_POLICY_FILE environment variable not set"
+        })?;
+    log::info!("MIGTD_POLICY_FILE set to: {}", policy_file_path);
     
-    let root_ca_file_path = match env::var("MIGTD_ROOT_CA_FILE") {
-        Ok(path) => {
-            log::info!("MIGTD_ROOT_CA_FILE set to: {}", path);
-            path
-        },
-        Err(_) => {
+    let root_ca_file_path = env::var("MIGTD_ROOT_CA_FILE")
+        .map_err(|_| {
             println!("MIGTD_ROOT_CA_FILE environment variable not set");
             print_usage();
-            process::exit(1);
-        }
-    };
+            "MIGTD_ROOT_CA_FILE environment variable not set"
+        })?;
+    log::info!("MIGTD_ROOT_CA_FILE set to: {}", root_ca_file_path);
     
     // Check if files exist before attempting to initialize
     if !std::path::Path::new(&policy_file_path).exists() {
         println!("Policy file not found: {}", policy_file_path);
         print_usage();
-        process::exit(1);
+        return Err(format!("Policy file not found: {}", policy_file_path).into());
     }
     
     if !std::path::Path::new(&root_ca_file_path).exists() {
         println!("Root CA file not found: {}", root_ca_file_path);
         print_usage();
-        process::exit(1);
+        return Err(format!("Root CA file not found: {}", root_ca_file_path).into());
     }
     
     // Initialize file-based emulation with real file access
@@ -111,14 +108,15 @@ fn initialize_emulation() {
         log::info!("File-based emulation initialized with real file access. Files will be loaded on demand from:");
         log::info!("  Policy: {}", policy_file_path);
         log::info!("  Root CA: {}", root_ca_file_path);
+        Ok(())
     } else {
         log::error!("Failed to initialize file-based emulation");
-        std::process::exit(1);
+        Err("Failed to initialize file-based emulation".into())
     }
 }
 
 /// Main runtime function for AzCVMEmu mode
-fn runtime_main_emu() {
+fn runtime_main_emu() -> Result<(), Box<dyn std::error::Error>> {
     // Dump basic information of MigTD (reusing from main.rs)
     basic_info();
 
@@ -129,10 +127,10 @@ fn runtime_main_emu() {
     event::register_callback();
 
     // Handle pre-migration for emulation mode
-    handle_pre_mig_emu();
+    handle_pre_mig_emu()
 }
 
-fn parse_commandline_args() {
+fn parse_commandline_args() -> Result<(), Box<dyn std::error::Error>> {
    
     let args: Vec<String> = env::args().collect();
     
@@ -155,7 +153,7 @@ fn parse_commandline_args() {
                 } else {
                     println!("Invalid request ID value: {}", args[i + 1]);
                     print_usage();
-                    process::exit(1);
+                    return Err(format!("Invalid request ID value: {}", args[i + 1]).into());
                 }
             }
             "--role" | "-m" if i + 1 < args.len() => {
@@ -171,7 +169,7 @@ fn parse_commandline_args() {
                     _ => {
                         println!("Invalid role value: {}. Use 'source' or 'destination'", args[i + 1]);
                         print_usage();
-                        process::exit(1);
+                        return Err(format!("Invalid role value: {}. Use 'source' or 'destination'", args[i + 1]).into());
                     }
                 }
             }
@@ -187,7 +185,7 @@ fn parse_commandline_args() {
                 } else {
                     println!("Invalid UUID values. Expected 4 unsigned integers");
                     print_usage();
-                    process::exit(1);
+                    return Err("Invalid UUID values. Expected 4 unsigned integers".into());
                 }
             }
             "--binding" | "-b" if i + 1 < args.len() => {
@@ -204,7 +202,7 @@ fn parse_commandline_args() {
                 } else {
                     println!("Invalid binding handle value: {}", args[i + 1]);
                     print_usage();
-                    process::exit(1);
+                    return Err(format!("Invalid binding handle value: {}", args[i + 1]).into());
                 }
             }
             "--dest-ip" | "-d" if i + 1 < args.len() => {
@@ -218,7 +216,7 @@ fn parse_commandline_args() {
                 } else {
                     println!("Invalid destination port value: {}", args[i + 1]);
                     print_usage();
-                    process::exit(1);
+                    return Err(format!("Invalid destination port value: {}", args[i + 1]).into());
                 }
             }
             "--help" | "-h" => {
@@ -235,6 +233,8 @@ fn parse_commandline_args() {
     
     if help_requested {
         print_usage();
+        // For help, we want to exit successfully, so we use std::process::exit(0)
+        // This is an exception to the error propagation pattern because help is not an error
         std::process::exit(0);
     }
     
@@ -277,39 +277,34 @@ fn parse_commandline_args() {
     };
     
     // Initialize TCP emulation
-    if let Err(e) = init_tcp_emulation_with_mode(tcp_ip, tcp_port, mode) {
-        log::error!("Failed to initialize TCP emulation: {}", e);
-        std::process::exit(1);
-    }
+    init_tcp_emulation_with_mode(tcp_ip, tcp_port, mode)
+        .map_err(|e| {
+            log::error!("Failed to initialize TCP emulation: {}", e);
+            format!("Failed to initialize TCP emulation: {}", e)
+        })?;
     
     // Handle connection logic based on role
     if !is_source {
         // Destination mode: start TCP server
         let addr = format!("{}:{}", tcp_ip, tcp_port);
-        match start_tcp_server_sync(&addr) {
-            Ok(_) => {
-                log::info!("TCP server started successfully on: {}", addr);
-            }
-            Err(e) => {
+        start_tcp_server_sync(&addr)
+            .map_err(|e| {
                 log::error!("Failed to start TCP server: {:?}", e);
-                std::process::exit(1);
-            }
-        }
+                format!("Failed to start TCP server: {:?}", e)
+            })?;
+        log::info!("TCP server started successfully on: {}", addr);
     } else {
         // Source mode: connect to destination server
         let addr = format!("{}:{}", tcp_ip, tcp_port);
         
         // For source mode, establish the TCP client connection
         use tdx_tdcall_emu::tdx_emu::connect_tcp_client;
-        match connect_tcp_client() {
-            Ok(_) => {
-                log::info!("Successfully connected to destination server at: {}", addr);
-            }
-            Err(e) => {
+        connect_tcp_client()
+            .map_err(|e| {
                 log::error!("Failed to connect to destination server at {}: {:?}", addr, e);
-                std::process::exit(1);
-            }
-        }
+                format!("Failed to connect to destination server at {}: {:?}", addr, e)
+            })?;
+        log::info!("Successfully connected to destination server at: {}", addr);
     }
 
     // Seed waitforrequest emulation with the parsed MigrationInformation
@@ -319,6 +314,8 @@ fn parse_commandline_args() {
         target_td_uuid: mig_info.target_td_uuid,
         binding_handle: mig_info.binding_handle,
     });
+    
+    Ok(())
 }
 
 fn print_usage() {
@@ -347,10 +344,11 @@ fn print_usage() {
     println!("  ./migtd --role source --dest-ip 192.168.1.100 --dest-port 8001");
 }
 
-fn handle_pre_mig_emu() {
+fn handle_pre_mig_emu() -> Result<(), Box<dyn std::error::Error>> {
   
     // For AzCVMEmu, create an async runtime and run the standard flow once
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
     
     // Run the standard sequence once for the single seeded request
     let exit_code: i32 = rt.block_on(async move {
@@ -396,5 +394,10 @@ fn handle_pre_mig_emu() {
         }
     });
 
-    process::exit(exit_code);
+    // Instead of calling process::exit(), return an error if exit_code is non-zero
+    if exit_code == 0 {
+        Ok(())
+    } else {
+        Err(format!("Migration process failed with exit code: {}", exit_code).into())
+    }
 }
