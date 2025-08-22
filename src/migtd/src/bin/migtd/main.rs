@@ -41,7 +41,10 @@ pub extern "C" fn main() {
 // AzCVMEmu entry point - standard Rust main function
 #[cfg(feature = "AzCVMEmu")]
 fn main() {
-    cvmemu::main();
+    if let Err(e) = cvmemu::main() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 }
 
 pub fn runtime_main() {
