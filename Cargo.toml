@@ -45,5 +45,4 @@ lto = true
 
 [patch.crates-io]
 ring = { path = "deps/td-shim/library/ring" }
-az-tdx-vtpm = { version = "0.7", git = "https://github.com/kinvolk/azure-cvm-tooling", package = "az-tdx-vtpm" }
 toml = { path = "deps/toml-nostd/crates/toml" }

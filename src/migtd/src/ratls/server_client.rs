@@ -17,13 +17,9 @@ use crypto::{
 
 use super::*;
 use crate::event_log::get_event_log;
-use verify::*;
-
-// Conditional imports for tdx_tdcall based on feature
 #[cfg(feature = "AzCVMEmu")]
-use tdx_tdcall_emu::tdreport;
-#[cfg(not(feature = "AzCVMEmu"))]
-use tdx_tdcall::tdreport;
+use tdx_tdcall_emu as tdx_tdcall;
+use verify::*;
 
 type Result<T> = core::result::Result<T, RatlsError>;
 
@@ -104,11 +100,8 @@ fn gen_quote(public_key: &[u8]) -> Result<Vec<u8>> {
     // Generate the TD Report that contains the public key hash as nonce
     let mut additional_data = [0u8; 64];
     additional_data[..hash.len()].copy_from_slice(hash.as_ref());
-    
-
-    let td_report = tdreport::tdcall_report(&additional_data)?;
+    let td_report = tdx_tdcall::tdreport::tdcall_report(&additional_data)?;
     attestation::get_quote(td_report.as_bytes()).map_err(|_| RatlsError::GetQuote)
-
 }
 
 fn verify_server_cert(cert: &[u8], quote: &[u8]) -> core::result::Result<(), CryptoError> {
@@ -194,28 +187,23 @@ mod verify {
     }
 
     fn verify_public_key(verified_report: &[u8], public_key: &[u8]) -> CryptoResult<()> {
-        #[cfg(feature = "AzCVMEmu")]
-        {
-            // In AzCVMEmu mode, we don't verify the public key in the report
-            // This is acceptable for testing/development but would not be secure in production
-            log::warn!("AzCVMEmu mode: Skipping public key verification in report");
+        if cfg!(feature = "AzCVMEmu") {
+            // In AzCVMEmu mode, REPORTDATA is constructed differently.
+            // Bypass public key hash check in this development environment.
+            log::warn!("AzCVMEmu mode: Skipping public key verification in TD report. This is NOT secure for production use.");
             return Ok(());
         }
+        const PUBLIC_KEY_HASH_SIZE: usize = 48;
 
-        #[cfg(not(feature = "AzCVMEmu"))]
-        {
-            const PUBLIC_KEY_HASH_SIZE: usize = 48;
+        let report_data = &verified_report[520..520 + PUBLIC_KEY_HASH_SIZE];
+        let digest = digest_sha384(public_key)?;
 
-            let report_data = &verified_report[520..520 + PUBLIC_KEY_HASH_SIZE];
-            let digest = digest_sha384(public_key)?;
-
-            if report_data == digest.as_slice() {
-                Ok(())
-            } else {
-                Err(CryptoError::TlsVerifyPeerCert(
-                    MISMATCH_PUBLIC_KEY.to_string(),
-                ))
-            }
+        if report_data == digest.as_slice() {
+            Ok(())
+        } else {
+            Err(CryptoError::TlsVerifyPeerCert(
+                MISMATCH_PUBLIC_KEY.to_string(),
+            ))
         }
     }
 }
@@ -238,7 +226,7 @@ mod verify {
             .as_ref()
             .ok_or(CryptoError::ParseCertificate)?;
         let _ = parse_extensions(extensions).ok_or(CryptoError::ParseCertificate)?;
-        
+
         // As the remote attestation is disabled, the certificate can't be verified. Aways return
         // success for test purpose.
         Ok(())

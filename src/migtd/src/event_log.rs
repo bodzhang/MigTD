@@ -15,17 +15,14 @@ use crypto::hash::digest_sha384;
 use spin::Once;
 #[cfg(not(feature = "AzCVMEmu"))]
 use td_payload::acpi::get_acpi_tables;
+#[cfg(feature = "AzCVMEmu")]
+use td_shim_emu::event_log::{get_acpi_tables, MockCcel as Ccel};
 #[cfg(not(feature = "AzCVMEmu"))]
 use td_shim_interface::acpi::Ccel;
-#[cfg(feature = "AzCVMEmu")]
-use td_shim_emu::event_log::{MockCcel as Ccel, get_acpi_tables};
-
-// Conditional imports for tdx_tdcall based on feature
-#[cfg(feature = "AzCVMEmu")]
-use tdx_tdcall_emu::tdx;
 #[cfg(not(feature = "AzCVMEmu"))]
 use tdx_tdcall::tdx;
-
+#[cfg(feature = "AzCVMEmu")]
+use tdx_tdcall_emu::tdx;
 use zerocopy::{AsBytes, FromBytes};
 
 pub const EV_EVENT_TAG: u32 = 0x00000006;

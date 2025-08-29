@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 
+#[cfg(not(feature = "AzCVMEmu"))]
+use crate::driver::ticks::with_timeout;
 #[cfg(feature = "vmcall-raw")]
 use crate::migration::event::VMCALL_MIG_REPORTSTATUS_FLAGS;
 use alloc::collections::BTreeSet;
@@ -14,16 +16,20 @@ use core::{future::poll_fn, mem::size_of, task::Poll};
 use event::VMCALL_SERVICE_FLAG;
 use lazy_static::lazy_static;
 use spin::Mutex;
-#[cfg(feature = "AzCVMEmu")]
-use td_payload_emu::mm::shared::SharedMemory;
 #[cfg(not(feature = "AzCVMEmu"))]
 use td_payload::mm::shared::SharedMemory;
 #[cfg(feature = "AzCVMEmu")]
-use tdx_tdcall_emu::{td_call, tdx, TdcallArgs};
+use td_payload_emu::mm::shared::SharedMemory;
 #[cfg(not(feature = "AzCVMEmu"))]
 use tdx_tdcall::{
     td_call,
-    tdx,
+    tdx::{self, tdcall_servtd_wr},
+    TdcallArgs,
+};
+#[cfg(feature = "AzCVMEmu")]
+use tdx_tdcall_emu::{
+    td_call,
+    tdx::{self, tdcall_servtd_wr},
     TdcallArgs,
 };
 use zerocopy::AsBytes;
@@ -53,6 +59,18 @@ struct ExchangeInformation {
     min_ver: u16,
     max_ver: u16,
     key: MigrationSessionKey,
+}
+
+// Local timeout helper: only for AzCVMEmu. Non-AzCVMEmu uses ticks::with_timeout.
+#[cfg(feature = "AzCVMEmu")]
+pub async fn with_timeout<F: core::future::Future>(
+    timeout: core::time::Duration,
+    fut: F,
+) -> core::result::Result<F::Output, crate::driver::ticks::TimeoutError> {
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(v) => Ok(v),
+        Err(_elapsed) => Err(crate::driver::ticks::TimeoutError),
+    }
 }
 
 impl Default for ExchangeInformation {
@@ -406,7 +424,6 @@ pub fn report_status(status: u8, request_id: u64) -> Result<()> {
 
 #[cfg(feature = "main")]
 pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
-    use crate::driver::ticks::with_timeout;
     use core::time::Duration;
 
     const TLS_TIMEOUT: Duration = Duration::from_secs(60); // 60 seconds
@@ -632,7 +649,7 @@ fn cal_mig_version(
 }
 
 fn set_mig_version(info: &MigrationInformation, mig_ver: u16) -> Result<()> {
-    tdx::tdcall_servtd_wr(
+    tdcall_servtd_wr(
         info.mig_info.binding_handle,
         TDCS_FIELD_MIG_VERSION,
         mig_ver as u64,

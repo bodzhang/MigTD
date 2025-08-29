@@ -15,7 +15,7 @@ tokio = { version = "1.0", features = ["net", "sync", "time", "rt", "rt-multi-th
 log = { version = "0.4", default-features = false }
 
 # Azure CVM specific dependencies
-az-tdx-vtpm = "0.7"
+az-tdx-vtpm = { version = "0.7", git = "https://github.com/kinvolk/azure-cvm-tooling", package = "az-tdx-vtpm", default-features = false, features = ["attester"] }
 zerocopy = { version = "0.7", default-features = false }
 
 # For compatibility with original tdx-tdcall interface
@@ -27,6 +27,7 @@ interrupt-emu = { path = "../interrupt-emu", package = "interrupt-emu" }
 [features]
 default = []
 no-std = []
+test_disable_ra_and_accept_all = []
 
 [lib]
 name = "tdx_tdcall_emu"

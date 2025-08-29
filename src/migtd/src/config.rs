@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 
-extern crate alloc;
-
 use r_efi::efi::Guid;
 use td_layout::build_time::{TD_SHIM_CONFIG_BASE, TD_SHIM_CONFIG_SIZE};
 
 #[cfg(not(feature = "AzCVMEmu"))]
 use td_shim_interface::td_uefi_pi::{fv, pi};
-
 #[cfg(feature = "AzCVMEmu")]
 use td_shim_interface_emu::td_uefi_pi::{fv, pi};
 
@@ -32,8 +29,6 @@ pub const MIGTD_ROOT_CA_FFS_GUID: Guid = Guid::from_fields(
     0x3D,
     &[0xA2, 0x1B, 0xD0, 0xC8, 0xFF, 0xF6],
 );
-
-
 
 pub fn get_config_volume() -> &'static [u8] {
     unsafe { core::slice::from_raw_parts(CONFIG_VOLUME_BASE as *const u8, CONFIG_VOLUME_SIZE) }

@@ -19,6 +19,7 @@ DEFAULT_DEST_PORT="8001"
 DEFAULT_BUILD_MODE="release"
 USE_SUDO=true
 RUN_BOTH=false
+SKIP_RA=false
 DEFAULT_RUST_BACKTRACE="1"
 # Default RUST_LOG: verbose in debug, info in release; can be overridden by env
 DEFAULT_RUST_LOG_DEBUG="debug"
@@ -46,20 +47,29 @@ show_usage() {
     echo "  --root-ca-file FILE          Set root CA file path (default: config/Intel_SGX_Provisioning_Certification_RootCA.cer)"
     echo "  --debug                      Build in debug mode (default: release)"
     echo "  --release                    Build in release mode (default)"
+    echo "  --skip-ra                    Skip remote attestation (uses mock TD reports/quotes for non-TDX environments)"
     echo "  --both                       Start destination first, then source (same host)"
     echo "  --no-sudo                    Run without sudo (useful for local testing)"
+    echo "  --log-level LEVEL            Set Rust log level (trace, debug, info, warn, error) (default: debug for debug builds, info for release builds)"
     echo "  -h, --help                   Show this help message"
     echo
     echo "Notes:"
     echo "  - TPM2TSS flows often require access to /dev/tpmrm0 or tpm2-abrmd."
     echo "    If those devices are present and you lack permissions, this script will"
     echo "    automatically enable sudo even if --no-sudo is specified."
+    echo "  - Skip RA mode (--skip-ra) disables remote attestation and uses mock TD reports/quotes,"
+    echo "    allowing MigTD to run in non-TDX, non-Azure CVM environments without TPM2-TSS dependencies."
+    echo "    This is useful for development and testing on any Linux system."
     echo
     echo "Examples:"
     echo "  $0                                    # Build release and run as source with defaults"
     echo "  $0 --role destination                # Build release and run as destination"
     echo "  $0 --debug --role source             # Build debug and run as source"
     echo "  $0 --release --role destination      # Build release and run as destination"
+    echo "  $0 --skip-ra --role source           # Build with skip RA mode (no TDX/Azure CVM/TPM required)"
+    echo "  $0 --skip-ra --both                  # Run both source and destination with skip RA mode"
+    echo "  $0 --log-level debug --role source   # Run with debug log level"
+    echo "  $0 --log-level warn --release        # Run with warn log level in release mode"
 }
 
 # Function to check if file exists
@@ -76,6 +86,11 @@ check_file() {
 
 # Detect TPM access needs and force sudo when the current user lacks permissions
 maybe_force_sudo_due_to_tpm() {
+    # Skip TPM checks in skip RA mode since it uses mock attestation
+    if [[ "$SKIP_RA" == true ]]; then
+        return 0
+    fi
+    
     # Only relevant if user requested no sudo explicitly
     if [[ "$USE_SUDO" == false ]]; then
         local need_sudo=false
@@ -112,15 +127,23 @@ maybe_force_sudo_due_to_tpm() {
 # Function to build MigTD
 build_migtd() {
     local build_mode="$1"
-    echo -e "${BLUE}Building MigTD in $build_mode mode with AzCVMEmu features...${NC}"
+    local skip_ra="$2"
+    
+    local features="AzCVMEmu"
+    if [[ "$skip_ra" == true ]]; then
+        features="AzCVMEmu,test_disable_ra_and_accept_all"
+        echo -e "${BLUE}Building MigTD in $build_mode mode with AzCVMEmu + skip RA features (mock attestation)...${NC}"
+    else
+        echo -e "${BLUE}Building MigTD in $build_mode mode with AzCVMEmu features...${NC}"
+    fi
     
     if [[ "$build_mode" == "debug" ]]; then
-        if ! cargo build --features "AzCVMEmu" --no-default-features; then
+        if ! cargo build --features "$features" --no-default-features; then
             echo -e "${RED}Error: Failed to build MigTD in debug mode${NC}" >&2
             exit 1
         fi
     else
-        if ! cargo build --release --features "AzCVMEmu" --no-default-features; then
+        if ! cargo build --release --features "$features" --no-default-features; then
             echo -e "${RED}Error: Failed to build MigTD in release mode${NC}" >&2
             exit 1
         fi
@@ -136,6 +159,7 @@ DEST_PORT="$DEFAULT_DEST_PORT"
 POLICY_FILE="$DEFAULT_POLICY_FILE"
 ROOT_CA_FILE="$DEFAULT_ROOT_CA_FILE"
 BUILD_MODE="$DEFAULT_BUILD_MODE"
+CUSTOM_LOG_LEVEL=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -171,6 +195,10 @@ while [[ $# -gt 0 ]]; do
             BUILD_MODE="release"
             shift
             ;;
+        --skip-ra)
+            SKIP_RA=true
+            shift
+            ;;
         --both)
             RUN_BOTH=true
             shift
@@ -178,6 +206,10 @@ while [[ $# -gt 0 ]]; do
         --no-sudo)
             USE_SUDO=false
             shift
+            ;;
+        --log-level)
+            CUSTOM_LOG_LEVEL="$2"
+            shift 2
             ;;
         --build)
             # Keep for backward compatibility, but it's now always enabled
@@ -207,7 +239,7 @@ fi
 cd "$(dirname "$0")"
 
 # Always build MigTD
-build_migtd "$BUILD_MODE"
+build_migtd "$BUILD_MODE" "$SKIP_RA"
 
 # Determine binary path based on build mode (unified migtd binary)
 if [[ "$BUILD_MODE" == "debug" ]]; then
@@ -283,6 +315,11 @@ echo -e "${BLUE}Setting up environment variables...${NC}"
 # Display configuration
 echo -e "${GREEN}Configuration:${NC}"
 echo "  Build mode: $BUILD_MODE"
+if [[ "$SKIP_RA" == true ]]; then
+    echo "  Skip RA mode: enabled (mock attestation, no TDX/Azure CVM/TPM required)"
+else
+    echo "  Skip RA mode: disabled (requires TDX/Azure CVM/TPM for attestation)"
+fi
 if [[ "$RUN_BOTH" == true ]]; then
     echo "  Mode: both (destination then source)"
 else
@@ -302,7 +339,9 @@ if [[ -z "$RUST_BACKTRACE" ]]; then
     RUST_BACKTRACE="$DEFAULT_RUST_BACKTRACE"
 fi
 if [[ -z "$RUST_LOG" ]]; then
-    if [[ "$BUILD_MODE" == "debug" ]]; then
+    if [[ -n "$CUSTOM_LOG_LEVEL" ]]; then
+        RUST_LOG="$CUSTOM_LOG_LEVEL"
+    elif [[ "$BUILD_MODE" == "debug" ]]; then
         RUST_LOG="$DEFAULT_RUST_LOG_DEBUG"
     else
         RUST_LOG="$DEFAULT_RUST_LOG_RELEASE"
@@ -311,7 +350,7 @@ fi
 
 # Prefer TPM resource manager device for TPM2TSS if present
 TSS2_TCTI_AUTO=""
-if [[ -e /dev/tpmrm0 ]]; then
+if [[ "$SKIP_RA" != true && -e /dev/tpmrm0 ]]; then
     TSS2_TCTI_AUTO="device:/dev/tpmrm0"
 fi
 
@@ -340,7 +379,7 @@ if [[ "$RUN_BOTH" == true ]]; then
     fi
 
     # Trap to cleanup background process on exit
-    trap 'echo -e "\n${YELLOW}Stopping destination (PID ${DEST_PID})...${NC}"; kill ${DEST_PID} >/dev/null 2>&1 || true' EXIT
+    trap 'echo -e "\n${YELLOW}Cleaning up destination process (PID ${DEST_PID})...${NC}"; if kill -0 ${DEST_PID} 2>/dev/null; then kill ${DEST_PID} >/dev/null 2>&1 || true; wait ${DEST_PID} 2>/dev/null || true; fi' EXIT
 
     echo -e "${BLUE}Starting source (foreground)...${NC}"
     SRC_ARGS=(
@@ -362,14 +401,32 @@ if [[ "$RUN_BOTH" == true ]]; then
     echo
     # Run source in foreground; on failure, show last logs and exit non-zero
     if [[ -n "$TSS2_TCTI_AUTO" ]]; then
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}" || FAILED=true
+        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}"
+        SRC_EXIT_CODE=$?
     else
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}" || FAILED=true
+        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}"
+        SRC_EXIT_CODE=$?
     fi
-    if [[ "$FAILED" == true ]]; then
+    echo -e "${BLUE}Source migtd exit code: $SRC_EXIT_CODE${NC}"
+    
+    # Check destination exit code before stopping it
+    if kill -0 "$DEST_PID" 2>/dev/null; then
+        echo -e "${BLUE}Destination is still running, stopping it...${NC}"
+        kill "$DEST_PID" >/dev/null 2>&1 || true
+        wait "$DEST_PID" 2>/dev/null || true
+        DEST_EXIT_CODE=$?
+        echo -e "${BLUE}Destination migtd exit code: $DEST_EXIT_CODE${NC}"
+    else
+        # Destination already exited, get its exit code
+        wait "$DEST_PID" 2>/dev/null || true
+        DEST_EXIT_CODE=$?
+        echo -e "${BLUE}Destination migtd exit code: $DEST_EXIT_CODE${NC}"
+    fi
+    
+    if [[ "$SRC_EXIT_CODE" -ne 0 ]]; then
         echo -e "${RED}Source run failed. Last 100 lines of destination log:${NC}"
         tail -n 100 dest.out.log || true
-        exit 1
+        exit $SRC_EXIT_CODE
     fi
 else
     # Single role run
@@ -390,7 +447,11 @@ else
     echo
     if [[ -n "$TSS2_TCTI_AUTO" ]]; then
         run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
+        EXIT_CODE=$?
     else
         run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
+        EXIT_CODE=$?
     fi
+    echo -e "${BLUE}MigTD exit code: $EXIT_CODE${NC}"
+    exit $EXIT_CODE
 fi

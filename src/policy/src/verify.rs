@@ -79,9 +79,9 @@ impl<'a> Report<'a> {
     const R_RTMR1: Range<usize> = 376..424;
     const R_RTMR2: Range<usize> = 424..472;
     const R_RTMR3: Range<usize> = 472..520;
-    const R_FMSPC: Range<usize> = 584..590;
-    const R_TDX_TCB_COMPONENTS: Range<usize> = 590..606;
-    const R_PCE_SVN: Range<usize> = 606..608;
+    const R_PLATFORM_FMSPC: Range<usize> = 584..590;
+    const R_PLATFORM_TDX_TCB_COMPONENTS: Range<usize> = 590..606;
+    const R_PLATFORM_PCE_SVN: Range<usize> = 606..608;
     const R_SGX_TCB_COMPONENTS: Range<usize> = 608..624;
     const R_TDX_MODULE_MAJOR_VER: Range<usize> = 624..625;
     const R_TDX_MODULE_SVN: Range<usize> = 625..626;
@@ -98,15 +98,15 @@ impl<'a> Report<'a> {
         }
 
         let mut platform_info = BTreeMap::new();
-        platform_info.insert(PlatformInfoProperty::Fmspc, &report[Self::R_FMSPC]);
+        platform_info.insert(PlatformInfoProperty::Fmspc, &report[Self::R_PLATFORM_FMSPC]);
         platform_info.insert(
             PlatformInfoProperty::SgxTcbComponents,
             &report[Self::R_SGX_TCB_COMPONENTS],
         );
-        platform_info.insert(PlatformInfoProperty::PceSvn, &report[Self::R_PCE_SVN]);
+        platform_info.insert(PlatformInfoProperty::PceSvn, &report[Self::R_PLATFORM_PCE_SVN]);
         platform_info.insert(
             PlatformInfoProperty::TdxTcbComponents,
-            &report[Self::R_TDX_TCB_COMPONENTS],
+            &report[Self::R_PLATFORM_TDX_TCB_COMPONENTS],
         );
 
         let mut qe_info = BTreeMap::new();
@@ -987,7 +987,7 @@ mod tests {
 
             // Only same platform is allowed
             let mut report_peer = template.to_vec();
-            report_peer[Report::R_FMSPC].copy_from_slice(&[0x20, 0xC0, 0x6F, 0, 0, 0]);
+            report_peer[Report::R_PLATFORM_FMSPC].copy_from_slice(&[0x20, 0xC0, 0x6F, 0, 0, 0]);
 
             let verify_result = verify_policy(
                 true,
@@ -1009,7 +1009,7 @@ mod tests {
             assert!(verify_result.is_ok());
 
             let mut report_peer = template.to_vec();
-            report_peer[Report::R_FMSPC].copy_from_slice(&[0x30, 0x81, 0x6F, 0, 0, 0]);
+            report_peer[Report::R_PLATFORM_FMSPC].copy_from_slice(&[0x30, 0x81, 0x6F, 0, 0, 0]);
 
             let verify_result = verify_policy(
                 true,
