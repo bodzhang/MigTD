@@ -1,7 +1,7 @@
 // Copyright (c) 2022 Intel Corporation
 //
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-
+use log::info;
 use core::ops::Range;
 use core::sync::atomic::{AtomicU8, Ordering};
 use core::{ffi::c_void, slice::from_raw_parts_mut};
@@ -38,7 +38,9 @@ pub extern "C" fn servtd_get_quote(tdquote_req_buf: *mut c_void, len: u64) -> i3
 
     let notify_registered = set_vmm_notification();
 
-    if tdvmcall_get_quote(shared.as_mut_bytes()).is_err() {
+    if let Err(err) = tdvmcall_get_quote(shared.as_mut_bytes()) {
+        info!("tdvmcall_get_quote failed with error: {:?}\n", err);
+        info!("tdvmcall_get_quote failed with error: {}\n", err as i32);
         return AttestLibError::QuoteFailure as i32;
     }
 

@@ -37,7 +37,39 @@ const GSM_FIELD_MAX_EXPORT_VERSION: u64 = 0x2000000100000002;
 const GSM_FIELD_MIN_IMPORT_VERSION: u64 = 0x2000000100000003;
 const GSM_FIELD_MAX_IMPORT_VERSION: u64 = 0x2000000100000004;
 #[cfg(feature = "vmcall-raw")]
-const TDX_VMCALL_VMM_SUCCESS: u32 = 1;
+const TDX_VMCALL_VMM_SUCCESS: u8 = 1;
+
+#[cfg(feature = "vmcall-raw")]
+#[repr(C)]
+struct GhciWaitForRequestResponse {
+    mig_request_id: u64,
+    migration_source: u8,
+    _pad: [u8; 7],
+    target_td_uuid: [u64; 4],
+    binding_handle: u64,
+}
+
+#[cfg(feature = "vmcall-raw")]
+fn parse_uuid(buf: &[u8]) -> [u64; 4] {
+    [
+        u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+        u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+        u64::from_le_bytes(buf[16..24].try_into().unwrap()),
+        u64::from_le_bytes(buf[24..32].try_into().unwrap()),
+    ]
+}
+
+#[cfg(feature = "vmcall-raw")]
+fn parse_ghci_waitforrequest_response(buf: &[u8]) -> GhciWaitForRequestResponse {
+    GhciWaitForRequestResponse {
+        mig_request_id: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+        migration_source: buf[8],
+        _pad: buf[9..16].try_into().unwrap(),
+        target_td_uuid: parse_uuid(&buf[16..48]),
+        binding_handle: u64::from_le_bytes(buf[48..56].try_into().unwrap()),
+    }
+}
+
 
 lazy_static! {
     pub static ref REQUESTS: Mutex<BTreeSet<u64>> = Mutex::new(BTreeSet::new());
@@ -103,14 +135,17 @@ pub fn query() -> Result<()> {
     let private_mem = rsp_mem
         .copy_to_private_shadow()
         .ok_or(MigrationResult::OutOfResource)?;
-
+    
+    log::info!("Received interrupt");
+    log::info!("Response: {:?}", private_mem);
     // Parse the response data
     // Check the GUID of the reponse
-    let rsp =
+    let rsp: VmcallServiceResponse<'_> =
         VmcallServiceResponse::try_read(private_mem).ok_or(MigrationResult::InvalidParameter)?;
     if rsp.read_guid() != VMCALL_SERVICE_COMMON_GUID.as_bytes() {
         return Err(MigrationResult::InvalidParameter);
     }
+
     let query = rsp
         .read_data::<ServiceQueryResponse>(0)
         .ok_or(MigrationResult::InvalidParameter)?;
@@ -126,51 +161,69 @@ pub fn query() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "vmcall-raw")]
+fn process_buffer(buffer: &mut [u8]) -> (u64, u32) {
+    assert!(buffer.len() >= 12, "Buffer too small!");
+    let (header, _payload_buffer) = buffer.split_at_mut(12); // Split at 12th byte
+
+    let data_status = u64::from_le_bytes(header[0..8].try_into().unwrap()); // First 8 bytes
+    let data_length = u32::from_le_bytes(header[8..12].try_into().unwrap()); // Next 4 bytes
+
+    (data_status, data_length)
+}
+
 pub async fn wait_for_request() -> Result<MigrationInformation> {
     //log::info!("Waiting for migration request from VMM");
-    
+
     #[cfg(feature = "vmcall-raw")]
     {
-        let num_rsp_pages: usize = 1;
-        let mut rsp_mem = SharedMemory::new(num_rsp_pages).ok_or(MigrationResult::OutOfResource)?;
+        let data_status: u64 = 0;
+        let data_length: u32 = 0;
 
-        let _ = VmcallServiceResponse::new(rsp_mem.as_mut_bytes(), VMCALL_SERVICE_MIGTD_GUID)
-            .ok_or(MigrationResult::InvalidParameter)?;
+        let mut data_buffer = SharedMemory::new(1).ok_or(MigrationResult::OutOfResource)?;
 
-        tdx::tdvmcall_migtd_waitforrequest(rsp_mem.as_mut_bytes(), event::VMCALL_SERVICE_VECTOR)?;
+        let data_buffer = data_buffer.as_mut_bytes();
 
+
+        //log::info!("MigTD Waiting for request");
+        data_buffer[0..8].copy_from_slice(&u64::to_le_bytes(data_status));
+        data_buffer[8..12].copy_from_slice(&u32::to_le_bytes(data_length));
+
+        tdx::tdvmcall_migtd_waitforrequest(data_buffer, event::VMCALL_SERVICE_VECTOR)?;
+        //log::info!("rsp_mem content: {:?}", rsp_mem.as_bytes());
+        
         poll_fn(|_cx| {
             if VMCALL_SERVICE_FLAG.load(Ordering::SeqCst) {
+                log::info!("VMCALL_SERVICE_FLAG is true\n");
                 VMCALL_SERVICE_FLAG.store(false, Ordering::SeqCst);
             } else {
+                log::info!("VMCALL_SERVICE_FLAG is false\n");
                 return Poll::Pending;
             }
+            log::info!("Interrupt triggered\n");
+            log::info!("data_buffer content: {:?}", data_buffer.as_bytes());
+            let (data_status, _data_length) = process_buffer(data_buffer);
 
-            let private_mem = rsp_mem
-                .copy_to_private_shadow()
-                .ok_or(MigrationResult::OutOfResource)?;
+            log::info!("Guid matches\n");
+            let slice = &data_buffer[12..12 + 56];
+            let wfr = parse_ghci_waitforrequest_response(slice);
 
-            // Parse out the response data
-            let rsp = VmcallServiceResponse::try_read(private_mem)
-                .ok_or(MigrationResult::InvalidParameter)?;
-            // Check the GUID of the reponse
-            if rsp.read_guid() != VMCALL_SERVICE_MIGTD_GUID.as_bytes() {
-                return Poll::Ready(Err(MigrationResult::InvalidParameter));
-            }
+            //log::info!("Migtd response data status: {}", wfr.data_status);
+            //log::info!("Migtd response request type: {}", wfr.request_type);
+            log::info!("Migtd response migration request ID: {}", wfr.mig_request_id);
+            log::info!("Migtd response migration source: {}", wfr.migration_source);
+            log::info!("Migtd response target TD UUID: {:?}", wfr.target_td_uuid);
+            log::info!("Migtd response binding handle: {}", wfr.binding_handle);
 
-            let wfr = rsp
-                .read_data::<ServiceMigWaitForReqResponse>(0)
-                .ok_or(MigrationResult::InvalidParameter)?;
-
-            if wfr.data_status != TDX_VMCALL_VMM_SUCCESS {
+            let data_status_bytes = data_status.to_le_bytes();
+            if data_status_bytes[0] != TDX_VMCALL_VMM_SUCCESS {
                 return Poll::Pending;
-            }
-
-            if wfr.request_type != 0 {
-                return Poll::Ready(Err(MigrationResult::InvalidParameter));
             }
 
             let request_id = wfr.mig_request_id;
+
+            log::info!("MidTD waiting for Request ID: {}", request_id);
+
             VMCALL_MIG_REPORTSTATUS_FLAGS
                 .lock()
                 .insert(request_id, AtomicBool::new(false));
@@ -300,28 +353,18 @@ pub fn shutdown() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "vmcall-raw")]
-fn process_buffer(buffer: &mut [u8]) -> (u32, u32) {
-    assert!(buffer.len() >= 8, "Buffer too small!");
-    let (header, _payload_buffer) = buffer.split_at_mut(8); // Split at 8th byte
-
-    let data_status = u32::from_le_bytes(header[0..4].try_into().unwrap()); // First 4 bytes
-    let data_length = u32::from_le_bytes(header[4..8].try_into().unwrap()); // Next 4 bytes
-
-    (data_status, data_length)
-}
 
 #[cfg(feature = "vmcall-raw")]
 pub async fn report_status(status: u8, request_id: u64) -> Result<()> {
-    let data_status: u32 = 0;
+    let data_status: u64 = 0;
     let data_length: u32 = 0;
 
     let mut data_buffer = SharedMemory::new(1).ok_or(MigrationResult::OutOfResource)?;
 
     let data_buffer = data_buffer.as_mut_bytes();
 
-    data_buffer[0..4].copy_from_slice(&u32::to_le_bytes(data_status));
-    data_buffer[4..8].copy_from_slice(&u32::to_le_bytes(data_length));
+    data_buffer[0..8].copy_from_slice(&u64::to_le_bytes(data_status));
+    data_buffer[8..12].copy_from_slice(&u32::to_le_bytes(data_length));
 
     tdx::tdvmcall_migtd_reportstatus(
         request_id,
@@ -341,9 +384,9 @@ pub async fn report_status(status: u8, request_id: u64) -> Result<()> {
             return Poll::Pending;
         }
 
-        let (data_status, _data_length) = process_buffer(data_buffer);
+        let data_status_bytes = data_status.to_le_bytes();
 
-        if data_status != TDX_VMCALL_VMM_SUCCESS {
+        if data_status_bytes[0] != TDX_VMCALL_VMM_SUCCESS {
             return Poll::Pending;
         }
 
@@ -406,7 +449,8 @@ pub fn report_status(status: u8, request_id: u64) -> Result<()> {
 pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
     use crate::driver::ticks::with_timeout;
     use core::time::Duration;
-
+    
+    log::info!("Entering MSK exchange\n");
     const TLS_TIMEOUT: Duration = Duration::from_secs(60); // 60 seconds
 
     #[cfg(feature = "vmcall-raw")]
@@ -582,6 +626,163 @@ pub async fn exchange_msk(info: &MigrationInformation) -> Result<()> {
         Ok(())
     }
 }
+
+/*
+pub fn exchange_msk_sync(info: &MigrationInformation) -> Result<()> {
+    use core::time::Duration;
+    
+    log::info!("Entering MSK exchange");
+    const TLS_TIMEOUT: Duration = Duration::from_secs(60);
+
+    #[cfg(feature = "vmcall-raw")]
+    {
+        use vmcall_raw::stream::VmcallRaw;
+
+        log::info!("Starting MSK exchange using vmcall-raw transport");
+
+        let mut vmcall_raw_instance = VmcallRaw::new_with_mid(info.mig_info.mig_request_id)
+            .map_err(|_e| MigrationResult::InvalidParameter)?;
+        
+        // Synchronous connection call
+        vmcall_raw_instance.connect().map_err(|_e| MigrationResult::InvalidParameter)?;
+        log::info!("Successfully established vmcall-raw connection");
+
+        let mut remote_information = ExchangeInformation::default();
+        let mut exchange_information = exchange_info(info)?;
+
+        if info.is_src() {
+            log::info!("Acting as migration source - sending exchange information");
+            vmcall_raw_instance.send(exchange_information.as_bytes(), 0)
+                .map_err(|_| MigrationResult::NetworkError)?;
+            log::info!("Src successfully sent exchange information to destination");
+
+            let size = vmcall_raw_instance.recv(remote_information.as_bytes_mut(), 0)
+                .map_err(|_| MigrationResult::NetworkError)?;
+            if size < core::mem::size_of::<ExchangeInformation>() {
+                return Err(MigrationResult::NetworkError);
+            }
+            log::info!("Src successfully received remote exchange information from destination");
+        } else {
+            log::info!("Acting as migration destination - waiting for exchange information");
+            let size = vmcall_raw_instance.recv(remote_information.as_bytes_mut(), 0)
+                .map_err(|_| MigrationResult::NetworkError)?;
+            if size < core::mem::size_of::<ExchangeInformation>() {
+                return Err(MigrationResult::NetworkError);
+            }
+            log::info!("Dst successfully received remote exchange information from source");
+
+            vmcall_raw_instance.send(exchange_information.as_bytes(), 0)
+                .map_err(|_| MigrationResult::NetworkError)?;
+            log::info!("Dst successfully sent exchange information to source");
+        }
+        vmcall_raw_instance.shutdown().map_err(|_e| MigrationResult::InvalidParameter)?;
+        log::info!("vmcall-raw connection closed successfully");
+
+        let mig_ver = cal_mig_version(info.is_src(), &exchange_information, &remote_information)?;
+        set_mig_version(info, mig_ver)?;
+        log::info!("Migration version negotiated successfully: {}", mig_ver);
+
+        write_msk(&info.mig_info, &remote_information.key)?;
+
+        log::info!("Set MSK and report status");
+        exchange_information.key.clear();
+        remote_information.key.clear();
+
+        return Ok(());
+    }
+
+    #[cfg(not(feature = "vmcall-raw"))]
+    {
+        log::info!("Starting MSK exchange using TLS transport");
+        let transport;
+
+        #[cfg(feature = "virtio-serial")]
+        {
+            use virtio_serial::VirtioSerialPort;
+            const VIRTIO_SERIAL_PORT_ID: u32 = 1;
+
+            let port = VirtioSerialPort::new(VIRTIO_SERIAL_PORT_ID);
+            port.open()?;
+            transport = port;
+        }
+
+        #[cfg(not(feature = "virtio-serial"))]
+        {
+            use vsock::{stream::VsockStream, VsockAddr};
+
+            #[cfg(feature = "virtio-vsock")]
+            let mut vsock = VsockStream::new()?;
+
+            #[cfg(feature = "vmcall-vsock")]
+            let mut vsock = VsockStream::new_with_cid(
+                info.mig_socket_info.mig_td_cid,
+                info.mig_info.mig_request_id,
+            )?;
+
+            vsock
+                .connect(&VsockAddr::new(
+                    info.mig_socket_info.mig_td_cid as u32,
+                    info.mig_socket_info.mig_channel_port,
+                ))?;
+            log::info!("Successfully established vsock connection");
+            transport = vsock;
+        }
+
+        let mut remote_information = ExchangeInformation::default();
+        let mut exchange_information = exchange_info(info)?;
+
+        if info.is_src() {
+            log::info!("Acting as migration source - establishing TLS client connection");
+            let mut ratls_client =
+                ratls::client(transport).map_err(|_| MigrationResult::SecureSessionError)?;
+            log::info!("TLS client connection established successfully");
+
+            ratls_client.write(exchange_information.as_bytes())
+                .map_err(|_| MigrationResult::NetworkError)?;
+            log::info!("Successfully sent exchange information via TLS");
+
+            let size = ratls_client.read(remote_information.as_bytes_mut())
+                .map_err(|_| MigrationResult::NetworkError)?;
+            if size < core::mem::size_of::<ExchangeInformation>() {
+                return Err(MigrationResult::NetworkError);
+            }
+            log::info!("Successfully received remote exchange information via TLS");
+            #[cfg(not(feature = "virtio-serial"))]
+            ratls_client.transport_mut().shutdown()?;
+        } else {
+            log::info!("Acting as migration destination - establishing TLS server connection");
+            let mut ratls_server =
+                ratls::server(transport).map_err(|_| MigrationResult::SecureSessionError)?;
+            log::info!("TLS server connection established successfully");
+
+            ratls_server.write(exchange_information.as_bytes())
+                .map_err(|_| MigrationResult::NetworkError)?;
+            log::info!("Successfully sent exchange information via TLS");
+
+            let size = ratls_server.read(remote_information.as_bytes_mut())
+                .map_err(|_| MigrationResult::NetworkError)?;
+            if size < core::mem::size_of::<ExchangeInformation>() {
+                return Err(MigrationResult::NetworkError);
+            }
+            log::info!("Successfully received remote exchange information via TLS");
+            #[cfg(not(feature = "virtio-serial"))]
+            ratls_server.transport_mut().shutdown()?;
+        }
+
+        let mig_ver = cal_mig_version(info.is_src(), &exchange_information, &remote_information)?;
+        set_mig_version(info, mig_ver)?;
+        log::info!("Migration version negotiated successfully: {}", mig_ver);
+
+        write_msk(&info.mig_info, &remote_information.key)?;
+
+        log::info!("Set MSK and report status");
+        exchange_information.key.clear();
+        remote_information.key.clear();
+
+        Ok(())
+    }
+}
+*/
 
 fn exchange_info(info: &MigrationInformation) -> Result<ExchangeInformation> {
     log::info!("Preparing exchange information for migration");
