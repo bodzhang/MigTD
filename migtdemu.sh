@@ -17,7 +17,6 @@ DEFAULT_REQUEST_ID="1"
 DEFAULT_DEST_IP="127.0.0.1"
 DEFAULT_DEST_PORT="8001"
 DEFAULT_BUILD_MODE="release"
-DEFAULT_REQUEST_TYPE="migration"
 USE_SUDO=true
 RUN_BOTH=false
 SKIP_RA=false
@@ -47,7 +46,6 @@ show_usage() {
     echo "  -i, --request-id ID          Set migration request ID (default: 1)"
     echo "  -d, --dest-ip IP             Set destination IP address (default: 127.0.0.1)"
     echo "  -p, --dest-port PORT         Set destination port (default: 8001)"
-    echo "  -y, --request-type TYPE      Set request type: 'migration' or 'getreport' (default: migration)"
     echo "  --policy-file FILE           Set policy file path (default: config/policy.json)"
     echo "  --root-ca-file FILE          Set root CA file path (default: config/Intel_SGX_Provisioning_Certification_RootCA.cer)"
     echo "  --policy-issuer-chain-file FILE Set policy issuer chain file path (required when using --policy-v2)"
@@ -72,14 +70,16 @@ show_usage() {
     echo "  - Mock report mode (--mock-report) uses the test_mock_report feature to generate mock"
     echo "    TD reports/quotes but still performs the full attestation flow. This is useful for"
     echo "    testing attestation logic without requiring real TDX hardware."
-    echo " - When using --policy-v2, you must explicitly specify a policy file with --policy-file and"
+    echo "  - When using --policy-v2, you must explicitly specify a policy file with --policy-file and"
     echo "    a policy issuer chain file with --policy-issuer-chain-file. You can use the provided"
     echo "    example files in config/AzCVMEmu. Some reference values in those files for the ServTD may become"
     echo "    outdated over time. Use ./sh_script/build_AzCVMEmu_policy_and_test.sh to generate updated policy"
     echo "    and issuer chain files."
+    echo "  - Migration flow automatically includes EnableLogArea and GetReportData requests before"
+    echo "    the actual migration, ensuring logging is enabled and a TD report is generated."
     echo
     echo "Examples:"
-    echo "  # Migration testing (traditional workflow)"
+    echo "  # Migration testing (includes EnableLogArea → GetReportData → StartMigration)"
     echo "  $0                                    # Build release and run as source with defaults"
     echo "  $0 --role destination                # Build release and run as destination"
     echo "  $0 --debug --role source             # Build debug and run as source"
@@ -92,10 +92,6 @@ show_usage() {
     echo "  $0 --policy-v2 --policy-file ./config/AzCVMEmu/policy_v2_signed.json --policy-issuer-chain-file ./config/AzCVMEmu/policy_issuer_chain.pem --debug --both     # Run both with policy v2 in debug mode"
     echo "  $0 --log-level debug --role source   # Run with debug log level"
     echo "  $0 --log-level warn --release        # Run with warn log level in release mode"
-    echo
-    echo "  # GetReportData testing (single-shot TD report generation)"
-    echo "  $0 --request-type getreport --request-id 100                    # Get TD report with default reportdata"
-    echo "  $0 -y getreport -i 200                                          # Short options for getreport"
 }
 
 # Function to check if file exists
@@ -188,7 +184,6 @@ ROLE="$DEFAULT_ROLE"
 REQUEST_ID="$DEFAULT_REQUEST_ID"
 DEST_IP="$DEFAULT_DEST_IP"
 DEST_PORT="$DEFAULT_DEST_PORT"
-REQUEST_TYPE="$DEFAULT_REQUEST_TYPE"
 POLICY_FILE="$DEFAULT_POLICY_FILE"
 ROOT_CA_FILE="$DEFAULT_ROOT_CA_FILE"
 POLICY_ISSUER_CHAIN_FILE=""  # No default - mandatory when using --policy-v2
@@ -211,10 +206,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -p|--dest-port)
             DEST_PORT="$2"
-            shift 2
-            ;;
-        -y|--request-type)
-            REQUEST_TYPE="$2"
             shift 2
             ;;
         --policy-file)
@@ -281,12 +272,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate request type
-if [[ "$REQUEST_TYPE" != "migration" && "$REQUEST_TYPE" != "getreport" ]]; then
-    echo -e "${RED}Error: Request type must be 'migration' or 'getreport', got: $REQUEST_TYPE${NC}" >&2
-    exit 1
-fi
-
 # Validate that --skip-ra and --mock-report are mutually exclusive
 if [[ "$SKIP_RA" == true && "$USE_MOCK_REPORT" == true ]]; then
     echo -e "${RED}Error: --skip-ra and --mock-report options are mutually exclusive${NC}" >&2
@@ -299,18 +284,12 @@ if [[ "$USE_MOCK_REPORT" == true ]]; then
     USE_SUDO=false
 fi
 
-# Validate role (skip when running both or when doing getreport)
-if [[ "$RUN_BOTH" != true && "$REQUEST_TYPE" == "migration" ]]; then
+# Validate role (skip when running both)
+if [[ "$RUN_BOTH" != true ]]; then
     if [[ "$ROLE" != "source" && "$ROLE" != "destination" ]]; then
         echo -e "${RED}Error: Role must be 'source' or 'destination', got: $ROLE${NC}" >&2
         exit 1
     fi
-fi
-
-# For getreport requests, --both makes no sense
-if [[ "$REQUEST_TYPE" == "getreport" && "$RUN_BOTH" == true ]]; then
-    echo -e "${RED}Error: --both option is not compatible with --request-type getreport${NC}" >&2
-    exit 1
 fi
 
 # Validate policy v2 requirements
@@ -434,7 +413,6 @@ echo -e "${BLUE}Setting up environment variables...${NC}"
 # Display configuration
 echo -e "${GREEN}Configuration:${NC}"
 echo "  Build mode: $BUILD_MODE"
-echo "  Request type: $REQUEST_TYPE"
 if [[ "$USE_POLICY_V2" == true ]]; then
     echo "  Policy version: v2"
 else
@@ -447,14 +425,12 @@ elif [[ "$USE_MOCK_REPORT" == true ]]; then
 else
     echo "  Attestation mode: normal (requires TDX/Azure CVM/TPM for real attestation)"
 fi
-if [[ "$REQUEST_TYPE" == "migration" ]]; then
-    if [[ "$RUN_BOTH" == true ]]; then
-        echo "  Mode: both (destination then source)"
-    else
-        echo "  Role: $ROLE"
-    fi
-    echo "  Destination: ${DEST_IP}:${DEST_PORT}"
+if [[ "$RUN_BOTH" == true ]]; then
+    echo "  Mode: both (destination then source)"
+else
+    echo "  Role: $ROLE"
 fi
+echo "  Destination: ${DEST_IP}:${DEST_PORT}"
 echo "  Request ID: $REQUEST_ID"
 echo "  Policy file: $POLICY_FILE"
 echo "  Root CA file: $ROOT_CA_FILE"
@@ -483,39 +459,16 @@ if [[ "$SKIP_RA" != true && "$USE_MOCK_REPORT" != true && -e /dev/tpmrm0 ]]; the
     TSS2_TCTI_AUTO="device:/dev/tpmrm0"
 fi
 
-if [[ "$REQUEST_TYPE" == "getreport" ]]; then
-    # GetReportData mode - single shot TD report generation
-    MIGTD_ARGS=(
-        "--request-type" "getreport"
-        "--request-id" "$REQUEST_ID"
-    )
-    echo -e "${BLUE}Starting MigTD in GetReportData mode...${NC}"
-    if [[ "$USE_SUDO" == true ]]; then SUDO_STR="sudo "; else SUDO_STR=""; fi
-    if [[ -n "$TSS2_TCTI_AUTO" ]]; then
-        echo -e "${YELLOW}Command: ${SUDO_STR}MIGTD_POLICY_FILE=$POLICY_FILE MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE RUST_BACKTRACE=$RUST_BACKTRACE RUST_LOG=$RUST_LOG TSS2_TCTI=$TSS2_TCTI_AUTO $MIGTD_BINARY ${MIGTD_ARGS[*]}${NC}"
-    else
-        echo -e "${YELLOW}Command: ${SUDO_STR}MIGTD_POLICY_FILE=$POLICY_FILE MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE RUST_BACKTRACE=$RUST_BACKTRACE RUST_LOG=$RUST_LOG $MIGTD_BINARY ${MIGTD_ARGS[*]}${NC}"
-    fi
-    echo
-    if [[ -n "$TSS2_TCTI_AUTO" ]]; then
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
-        EXIT_CODE=$?
-    else
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
-        EXIT_CODE=$?
-    fi
-    echo -e "${BLUE}MigTD exit code: $EXIT_CODE${NC}"
-    exit $EXIT_CODE
-elif [[ "$RUN_BOTH" == true ]]; then
+if [[ "$RUN_BOTH" == true ]]; then
     echo -e "${BLUE}Starting destination in background...${NC}"
     DEST_ARGS=("--role" "destination" "--request-id" "$REQUEST_ID")
     # Start destination and redirect output
     (
         set -x
         if [[ -n "$TSS2_TCTI_AUTO" ]]; then
-            run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${DEST_ARGS[@]}"
+            run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "MIGTD_LOG_FILE=migtd_destination.log" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${DEST_ARGS[@]}"
         else
-            run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${DEST_ARGS[@]}"
+            run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "MIGTD_LOG_FILE=migtd_destination.log" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${DEST_ARGS[@]}"
         fi
     ) > dest.out.log 2>&1 &
     DEST_PID=$!
@@ -553,10 +506,10 @@ elif [[ "$RUN_BOTH" == true ]]; then
     echo
     # Run source in foreground; on failure, show last logs and exit non-zero
     if [[ -n "$TSS2_TCTI_AUTO" ]]; then
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}"
+        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "MIGTD_LOG_FILE=migtd_source.log" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}"
         SRC_EXIT_CODE=$?
     else
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}"
+        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "MIGTD_LOG_FILE=migtd_source.log" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${SRC_ARGS[@]}"
         SRC_EXIT_CODE=$?
     fi
     echo -e "${BLUE}Source migtd exit code: $SRC_EXIT_CODE${NC}"
@@ -598,10 +551,10 @@ else
     fi
     echo
     if [[ -n "$TSS2_TCTI_AUTO" ]]; then
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
+        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "MIGTD_LOG_FILE=migtd_${ROLE}.log" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" "TSS2_TCTI=$TSS2_TCTI_AUTO" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
         EXIT_CODE=$?
     else
-        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
+        run_cmd "MIGTD_POLICY_FILE=$POLICY_FILE" "MIGTD_ROOT_CA_FILE=$ROOT_CA_FILE" "MIGTD_POLICY_ISSUER_CHAIN_FILE=$POLICY_ISSUER_CHAIN_FILE" "MIGTD_LOG_FILE=migtd_${ROLE}.log" "RUST_BACKTRACE=$RUST_BACKTRACE" "RUST_LOG=$RUST_LOG" -- "$MIGTD_BINARY" "${MIGTD_ARGS[@]}"
         EXIT_CODE=$?
     fi
     echo -e "${BLUE}MigTD exit code: $EXIT_CODE${NC}"
