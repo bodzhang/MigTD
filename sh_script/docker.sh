@@ -8,7 +8,7 @@ usage() {
     cat << EOM
 Usage: $(basename "$0") [OPTION]...
   -f <folder>      Path of folder containing the Dockerfile.
-  -c <commit>      MigTD commit hash to build (passed as MIGTD_COMMIT build arg).
+  -c <commit>      MigTD commit hash to build (optional; defaults to latest).
 EOM
 }
 
@@ -40,10 +40,6 @@ process_args() {
     if [[ ! -f "${FOLDER}/Dockerfile" ]]; then
         error "Dockerfile does not exist."
     fi
-
-    if [[ -z ${COMMIT} ]]; then
-        error "Please specify the MigTD commit hash to build through -c."
-    fi
 }
 
 process_args $@
@@ -53,10 +49,14 @@ pushd ${FOLDER}
 # If the docker image does not exist, build the docker image
 set +e && docker image inspect migtd.build.env:latest > /dev/null 2>&1 && set -e
 if [ $? != 0 ]; then
+    COMMIT_ARG=""
+    if [[ -n ${COMMIT} ]]; then
+        COMMIT_ARG="--build-arg MIGTD_COMMIT=${COMMIT}"
+    fi
     docker build -t migtd.build.env \
             --build-arg https_proxy=$https_proxy \
             --build-arg http_proxy=$http_proxy \
-            --build-arg MIGTD_COMMIT=${COMMIT} \
+            ${COMMIT_ARG} \
             .
 fi
 
