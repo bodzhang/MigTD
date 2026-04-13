@@ -52,7 +52,7 @@ jobs:
           components: clippy
 
       - name: Install required cargo
-        run: cargo install clippy-sarif sarif-fmt
+        run: cargo install clippy-sarif@0.8.0 sarif-fmt@0.8.0
 
       - name: Preparation Work
         run: bash sh_script/preparation.sh

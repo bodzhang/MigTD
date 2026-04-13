@@ -13,14 +13,14 @@ RUN apt-get update && \
     clang llvm nasm \
     ocaml ocamlbuild wget pkg-config libtool autoconf autotools-dev automake \
     screen expect python3 python3-pip \
-    && pip install pytest --break-system-packages \
+    && pip install pytest==9.0.3 --break-system-packages \
     # cleanup
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install rustup and a fixed version of Rust.
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.88.0
 RUN rustup component add rust-src
-RUN cargo install cargo-xbuild
+RUN cargo install cargo-xbuild@0.6.6
 RUN rustup target add x86_64-unknown-none
 
 RUN git clone --recursive https://github.com/intel/MigTD.git
