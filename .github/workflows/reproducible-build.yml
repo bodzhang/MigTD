@@ -44,7 +44,7 @@ jobs:
             -w /workspace \
             -e AS=nasm \
             migtd.buildenv \
-            bash -c "cargo image"
+            bash -c "cargo image --reproducible"
 
       - name: Record sha256 of first build
         run: |
@@ -67,7 +67,7 @@ jobs:
             -w /workspace \
             -e AS=nasm \
             migtd.buildenv \
-            bash -c "cargo image"
+            bash -c "cargo image --reproducible"
 
       - name: Record sha256 of second build
         run: |

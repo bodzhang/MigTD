@@ -82,6 +82,10 @@ pub(crate) struct BuildArgs {
     /// Issuer chain of migration policy v2, required if `policy_v2` is set
     #[clap(long)]
     policy_issuer_chain: Option<PathBuf>,
+    /// Strip embedded build metadata (file paths) from ELF files to produce a
+    /// reproducible binary. Only needed when verifying reproducible builds.
+    #[clap(long)]
+    reproducible: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -132,9 +136,11 @@ impl BuildArgs {
         self.create_mmio_config()?;
         let (reset_vector, shim) = self.build_shim()?;
         let migtd = self.build_migtd()?;
-        // Strip embedded build metadata (file paths, etc.) from ELF files before final assembly
-        // to ensure the output binary is reproducible across builds.
-        self.strip_info(&shim, &migtd)?;
+        if self.reproducible {
+            // Strip embedded build metadata (file paths, etc.) from ELF files before final assembly
+            // to ensure the output binary is reproducible across builds.
+            self.strip_info(&shim, &migtd)?;
+        }
         let bin = self.build_final(reset_vector.as_path(), shim.as_path(), migtd.as_path())?;
         self.enroll(bin.as_path())?;
 
