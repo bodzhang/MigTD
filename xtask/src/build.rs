@@ -253,12 +253,16 @@ impl BuildArgs {
         let shim_name = shim
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("td-shim");
+            .ok_or_else(|| anyhow::anyhow!("Failed to get file name from shim path: {:?}", shim))?;
         let migtd_name = migtd
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("migtd");
-        let migtd_workspace = PROJECT_ROOT.to_str().unwrap();
+            .ok_or_else(|| {
+                anyhow::anyhow!("Failed to get file name from migtd path: {:?}", migtd)
+            })?;
+        let migtd_workspace = PROJECT_ROOT
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("PROJECT_ROOT path is not valid UTF-8"))?;
 
         cmd!(sh, "cargo run -p td-shim-tools --bin td-shim-strip-info")
             .args(&["-n", migtd_name, "-w", migtd_workspace])
