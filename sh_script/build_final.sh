@@ -100,8 +100,8 @@ function final_test_td_payload() {
     cargo build -p td-shim --target x86_64-unknown-none --release --features=main,tdx --no-default-features
 
     set_cc
-    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n test-td-payload -w ../../ --target x86_64-unknown-none
-    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n td-shim --target x86_64-unknown-none
+    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n test-td-payload -w ../../ --target x86_64-unknown-none -s
+    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n td-shim --target x86_64-unknown-none -s
     
     cargo run -p td-shim-tools --features="linker" --no-default-features --bin td-shim-ld -- \
             target/x86_64-unknown-none/release/ResetVector.bin \
@@ -268,8 +268,8 @@ function build_tdshim_sb() {
 function strip_info() {
     pushd deps/td-shim
     set_cc
-    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n migtd -w ../../ --target x86_64-unknown-none
-    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n td-shim --target x86_64-unknown-none   
+    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n migtd -w ../../ --target x86_64-unknown-none -s
+    cargo run -p td-shim-tools --bin td-shim-strip-info -- -n td-shim --target x86_64-unknown-none -s
     popd
     unset_cc
 }

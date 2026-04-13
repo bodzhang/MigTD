@@ -132,6 +132,7 @@ impl BuildArgs {
         self.create_mmio_config()?;
         let (reset_vector, shim) = self.build_shim()?;
         let migtd = self.build_migtd()?;
+        self.strip_info(&shim, &migtd)?;
         let bin = self.build_final(reset_vector.as_path(), shim.as_path(), migtd.as_path())?;
         self.enroll(bin.as_path())?;
 
@@ -241,6 +242,35 @@ impl BuildArgs {
             .join("target/x86_64-unknown-none/")
             .join(&self.profile_path())
             .join("migtd"))
+    }
+
+    fn strip_info(&self, shim: &Path, migtd: &Path) -> Result<()> {
+        let sh = Shell::new()?;
+        sh.set_var("CC", "clang");
+        sh.set_var("AR", "llvm-ar");
+
+        sh.change_dir(SHIM_FOLDER.as_path());
+        let shim_name = shim
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("td-shim");
+        let migtd_name = migtd
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("migtd");
+        let migtd_workspace = PROJECT_ROOT.to_str().unwrap();
+
+        cmd!(sh, "cargo run -p td-shim-tools --bin td-shim-strip-info")
+            .args(&["-n", migtd_name, "-w", migtd_workspace])
+            .args(&["--target", "x86_64-unknown-none", "-s"])
+            .run()?;
+
+        cmd!(sh, "cargo run -p td-shim-tools --bin td-shim-strip-info")
+            .args(&["-n", shim_name])
+            .args(&["--target", "x86_64-unknown-none", "-s"])
+            .run()?;
+
+        Ok(())
     }
 
     fn build_final(&self, reset_vector: &Path, shim: &Path, migtd: &Path) -> Result<PathBuf> {

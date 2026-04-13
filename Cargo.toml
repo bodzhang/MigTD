@@ -47,6 +47,7 @@ strip = true
 panic = "abort" # disable stack unwinding on panic
 opt-level = "z"
 lto = true
+strip = true
 
 [patch.crates-io]
 ring = { path = "deps/td-shim/library/ring" }
