@@ -9,10 +9,29 @@ WORKDIR /root
 # DEBIAN_FRONTEND is set for tzdata.
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
-    build-essential unzip ca-certificates curl gcc git libssl-dev pkg-config ssh \
-    clang llvm nasm \
-    ocaml ocamlbuild wget pkg-config libtool autoconf autotools-dev automake \
-    screen expect python3 python3-pip \
+    build-essential=12.10ubuntu1 \
+    unzip=6.0-28ubuntu4.1 \
+    ca-certificates=20240203 \
+    curl=8.5.0-2ubuntu10.8 \
+    gcc=4:13.2.0-7ubuntu1 \
+    git=1:2.43.0-1ubuntu7.3 \
+    libssl-dev=3.0.13-0ubuntu3.9 \
+    pkg-config=1.8.1-2build1 \
+    ssh=1:9.6p1-3ubuntu13.15 \
+    clang=1:18.0-59~exp2 \
+    llvm=1:18.0-59~exp2 \
+    nasm=2.16.01-1build1 \
+    ocaml=4.14.1-1ubuntu1 \
+    ocamlbuild=0.14.3-1 \
+    wget=1.21.4-1ubuntu4.1 \
+    libtool=2.4.7-7build1 \
+    autoconf=2.71-3 \
+    autotools-dev=20220109.1 \
+    automake=1:1.16.5-1.3ubuntu1 \
+    screen=4.9.1-1ubuntu1 \
+    expect=5.45.4-3 \
+    python3=3.12.3-0ubuntu2.1 \
+    python3-pip=24.0+dfsg-1ubuntu1.3 \
     && pip install pytest==9.0.3 --break-system-packages \
     # cleanup
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -23,4 +42,4 @@ RUN rustup component add rust-src
 RUN cargo install cargo-xbuild@0.6.6
 RUN rustup target add x86_64-unknown-none
 
-RUN git clone --recursive https://github.com/intel/MigTD.git
+RUN git clone --recursive --branch v0.6.0 --depth 1 https://github.com/intel/MigTD.git
