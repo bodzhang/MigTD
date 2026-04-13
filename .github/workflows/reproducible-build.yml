@@ -42,9 +42,9 @@ jobs:
 
       - name: Record sha256 of first build
         run: |
-          SHA1=$(sha256sum target/release/migtd.bin | awk '{print $1}')
-          echo "BUILD1_SHA256=$SHA1" >> "$GITHUB_ENV"
-          echo "First build sha256: $SHA1"
+          BUILD1_SHA256=$(sha256sum target/release/migtd.bin | awk '{print $1}')
+          echo "BUILD1_SHA256=$BUILD1_SHA256" >> "$GITHUB_ENV"
+          echo "First build sha256: $BUILD1_SHA256"
 
       - name: Clean build artifacts
         run: |
@@ -56,9 +56,9 @@ jobs:
 
       - name: Record sha256 of second build
         run: |
-          SHA2=$(sha256sum target/release/migtd.bin | awk '{print $1}')
-          echo "BUILD2_SHA256=$SHA2" >> "$GITHUB_ENV"
-          echo "Second build sha256: $SHA2"
+          BUILD2_SHA256=$(sha256sum target/release/migtd.bin | awk '{print $1}')
+          echo "BUILD2_SHA256=$BUILD2_SHA256" >> "$GITHUB_ENV"
+          echo "Second build sha256: $BUILD2_SHA256"
 
       - name: Compare checksums
         run: |
