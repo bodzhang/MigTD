@@ -132,6 +132,8 @@ impl BuildArgs {
         self.create_mmio_config()?;
         let (reset_vector, shim) = self.build_shim()?;
         let migtd = self.build_migtd()?;
+        // Strip embedded build metadata (file paths, etc.) from ELF files before final assembly
+        // to ensure the output binary is reproducible across builds.
         self.strip_info(&shim, &migtd)?;
         let bin = self.build_final(reset_vector.as_path(), shim.as_path(), migtd.as_path())?;
         self.enroll(bin.as_path())?;
