@@ -42,6 +42,12 @@ RUN rustup component add rust-src
 RUN cargo install cargo-xbuild@0.6.6
 RUN rustup target add x86_64-unknown-none
 
+# clang targeting x86_64-unknown-none-elf does not search the Ubuntu 24.04
+# multiarch directory by default, causing ring's C code to fail when it reaches
+# bits/libc-header-start.h via the system stdint.h.  Point cc-rs at the right
+# directory so the C compilation succeeds.
+ENV CFLAGS_x86_64_unknown_none="-I/usr/include/x86_64-linux-gnu"
+
 FROM buildenv AS full
 
 ARG MIGTD_COMMIT=""
