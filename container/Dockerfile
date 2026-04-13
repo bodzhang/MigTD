@@ -42,4 +42,8 @@ RUN rustup component add rust-src
 RUN cargo install cargo-xbuild@0.6.6
 RUN rustup target add x86_64-unknown-none
 
-RUN git clone --recursive --branch v0.6.0 --depth 1 https://github.com/intel/MigTD.git
+ARG MIGTD_COMMIT
+RUN git clone https://github.com/intel/MigTD.git && \
+    cd MigTD && \
+    git checkout ${MIGTD_COMMIT} && \
+    git submodule update --init --recursive

@@ -2,11 +2,13 @@
 set -e
 
 FOLDER=""
+COMMIT=""
 
 usage() {
     cat << EOM
 Usage: $(basename "$0") [OPTION]...
-  -d <docker file>     Path of Dockerfile.
+  -f <folder>      Path of folder containing the Dockerfile.
+  -c <commit>      MigTD commit hash to build (passed as MIGTD_COMMIT build arg).
 EOM
 }
 
@@ -16,9 +18,10 @@ error() {
 }
 
 process_args() {
-    while getopts ":f:h" option; do
+    while getopts ":f:c:h" option; do
         case "$option" in
             f) FOLDER=$OPTARG;;
+            c) COMMIT=$OPTARG;;
             h) usage
                exit 0
                ;;
@@ -37,6 +40,10 @@ process_args() {
     if [[ ! -f "${FOLDER}/Dockerfile" ]]; then
         error "Dockerfile does not exist."
     fi
+
+    if [[ -z ${COMMIT} ]]; then
+        error "Please specify the MigTD commit hash to build through -c."
+    fi
 }
 
 process_args $@
@@ -49,6 +56,7 @@ if [ $? != 0 ]; then
     docker build -t migtd.build.env \
             --build-arg https_proxy=$https_proxy \
             --build-arg http_proxy=$http_proxy \
+            --build-arg MIGTD_COMMIT=${COMMIT} \
             .
 fi
 
