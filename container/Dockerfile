@@ -1,4 +1,4 @@
-FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c AS buildenv
 
 # Adding rust binaries to PATH.
 ENV PATH="$PATH:/root/.cargo/bin"
@@ -41,6 +41,8 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.88.0
 RUN rustup component add rust-src
 RUN cargo install cargo-xbuild@0.6.6
 RUN rustup target add x86_64-unknown-none
+
+FROM buildenv AS full
 
 ARG MIGTD_COMMIT=""
 RUN git clone https://github.com/intel/MigTD.git && \

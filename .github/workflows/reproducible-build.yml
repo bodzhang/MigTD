@@ -35,7 +35,7 @@ jobs:
           submodules: recursive
 
       - name: Build Docker build environment
-        run: docker build -t migtd.buildenv -f container/Dockerfile.buildenv container/
+        run: docker build --target buildenv -t migtd.buildenv container/
 
       - name: Build MigTD binary (first pass)
         run: |
