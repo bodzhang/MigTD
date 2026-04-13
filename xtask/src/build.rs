@@ -82,6 +82,10 @@ pub(crate) struct BuildArgs {
     /// Issuer chain of migration policy v2, required if `policy_v2` is set
     #[clap(long)]
     policy_issuer_chain: Option<PathBuf>,
+    /// Strip embedded build metadata (file paths) from ELF files to produce a
+    /// reproducible binary. Only needed when verifying reproducible builds.
+    #[clap(long)]
+    reproducible: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -132,6 +136,11 @@ impl BuildArgs {
         self.create_mmio_config()?;
         let (reset_vector, shim) = self.build_shim()?;
         let migtd = self.build_migtd()?;
+        if self.reproducible {
+            // Strip embedded build metadata (file paths, etc.) from ELF files before final assembly
+            // to ensure the output binary is reproducible across builds.
+            self.strip_info(&shim, &migtd)?;
+        }
         let bin = self.build_final(reset_vector.as_path(), shim.as_path(), migtd.as_path())?;
         self.enroll(bin.as_path())?;
 
@@ -241,6 +250,39 @@ impl BuildArgs {
             .join("target/x86_64-unknown-none/")
             .join(&self.profile_path())
             .join("migtd"))
+    }
+
+    fn strip_info(&self, shim: &Path, migtd: &Path) -> Result<()> {
+        let sh = Shell::new()?;
+        sh.set_var("CC", "clang");
+        sh.set_var("AR", "llvm-ar");
+
+        sh.change_dir(SHIM_FOLDER.as_path());
+        let shim_name = shim
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| anyhow::anyhow!("Failed to get file name from shim path: {:?}", shim))?;
+        let migtd_name = migtd
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Failed to get file name from migtd path: {:?}", migtd)
+            })?;
+        let migtd_workspace = PROJECT_ROOT
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("PROJECT_ROOT path is not valid UTF-8"))?;
+
+        cmd!(sh, "cargo run -p td-shim-tools --bin td-shim-strip-info")
+            .args(&["-n", migtd_name, "-w", migtd_workspace])
+            .args(&["--target", "x86_64-unknown-none", "-s"])
+            .run()?;
+
+        cmd!(sh, "cargo run -p td-shim-tools --bin td-shim-strip-info")
+            .args(&["-n", shim_name])
+            .args(&["--target", "x86_64-unknown-none", "-s"])
+            .run()?;
+
+        Ok(())
     }
 
     fn build_final(&self, reset_vector: &Path, shim: &Path, migtd: &Path) -> Result<PathBuf> {

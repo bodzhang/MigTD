@@ -47,6 +47,7 @@ strip = true
 panic = "abort" # disable stack unwinding on panic
 opt-level = "z"
 lto = true
+strip = true # strip debug symbols from the final binary to remove embedded paths that break reproducibility
 
 [patch.crates-io]
 ring = { path = "deps/td-shim/library/ring" }

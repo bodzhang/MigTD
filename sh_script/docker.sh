@@ -2,11 +2,13 @@
 set -e
 
 FOLDER=""
+COMMIT=""
 
 usage() {
     cat << EOM
 Usage: $(basename "$0") [OPTION]...
-  -d <docker file>     Path of Dockerfile.
+  -f <folder>      Path of folder containing the Dockerfile.
+  -c <commit>      MigTD commit hash to build (optional; defaults to latest).
 EOM
 }
 
@@ -16,9 +18,10 @@ error() {
 }
 
 process_args() {
-    while getopts ":f:h" option; do
+    while getopts ":f:c:h" option; do
         case "$option" in
             f) FOLDER=$OPTARG;;
+            c) COMMIT=$OPTARG;;
             h) usage
                exit 0
                ;;
@@ -46,9 +49,14 @@ pushd ${FOLDER}
 # If the docker image does not exist, build the docker image
 set +e && docker image inspect migtd.build.env:latest > /dev/null 2>&1 && set -e
 if [ $? != 0 ]; then
+    COMMIT_ARG=""
+    if [[ -n ${COMMIT} ]]; then
+        COMMIT_ARG="--build-arg MIGTD_COMMIT=${COMMIT}"
+    fi
     docker build -t migtd.build.env \
             --build-arg https_proxy=$https_proxy \
             --build-arg http_proxy=$http_proxy \
+            ${COMMIT_ARG} \
             .
 fi
 

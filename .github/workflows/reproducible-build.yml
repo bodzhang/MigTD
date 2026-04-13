@@ -1,0 +1,86 @@
+on:
+  push:
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+name: Reproducible Build
+
+env:
+  AS: nasm
+  RUST_TOOLCHAIN: 1.88.0
+  TOOLCHAIN_PROFILE: minimal
+
+permissions:
+  contents: read
+
+jobs:
+  reproducible-build:
+    name: Verify reproducible build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout sources
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Build Docker build environment
+        run: docker build --target buildenv -t migtd.buildenv container/
+
+      - name: Build MigTD binary (first pass)
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -e AS=nasm \
+            migtd.buildenv \
+            bash -c "cargo image --reproducible"
+
+      - name: Record sha256 of first build
+        run: |
+          BUILD1_SHA256=$(sha256sum target/release/migtd.bin | awk '{print $1}')
+          echo "BUILD1_SHA256=$BUILD1_SHA256" >> "$GITHUB_ENV"
+          echo "First build sha256: $BUILD1_SHA256"
+
+      - name: Clean build artifacts
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            migtd.buildenv \
+            bash -c "cargo clean && pushd deps/td-shim && cargo clean && popd"
+
+      - name: Build MigTD binary (second pass)
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -e AS=nasm \
+            migtd.buildenv \
+            bash -c "cargo image --reproducible"
+
+      - name: Record sha256 of second build
+        run: |
+          BUILD2_SHA256=$(sha256sum target/release/migtd.bin | awk '{print $1}')
+          echo "BUILD2_SHA256=$BUILD2_SHA256" >> "$GITHUB_ENV"
+          echo "Second build sha256: $BUILD2_SHA256"
+
+      - name: Compare checksums
+        run: |
+          echo "First build:  $BUILD1_SHA256"
+          echo "Second build: $BUILD2_SHA256"
+          if [ "$BUILD1_SHA256" != "$BUILD2_SHA256" ]; then
+            echo "ERROR: Reproducible build check FAILED — binaries differ!"
+            exit 1
+          fi
+          echo "Reproducible build check PASSED — both binaries are identical."

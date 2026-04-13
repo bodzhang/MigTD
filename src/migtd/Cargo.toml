@@ -66,6 +66,7 @@ maybe-async = "0.2.7"
 async-trait = "0.1.71"
 zeroize = { version = "1.5.0", features = ["zeroize_derive"]}
 ring = { version = "0.17.14" }
+getrandom = { version = "0.2", features = ["rdrand"] }
 
 [features]
 default = ["virtio-vsock"]
