@@ -21,7 +21,7 @@ jobs:
   reproducible-build:
     name: Verify reproducible build
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -34,11 +34,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup build environment
-        uses: ./.github/actions/setup-build-environment
+      - name: Build Docker build environment
+        run: docker build -t migtd.buildenv -f container/Dockerfile.buildenv container/
 
       - name: Build MigTD binary (first pass)
-        run: cargo image
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -e AS=nasm \
+            migtd.buildenv \
+            bash -c "cargo image"
 
       - name: Record sha256 of first build
         run: |
@@ -48,11 +54,20 @@ jobs:
 
       - name: Clean build artifacts
         run: |
-          cargo clean
-          pushd deps/td-shim && cargo clean && popd
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            migtd.buildenv \
+            bash -c "cargo clean && pushd deps/td-shim && cargo clean && popd"
 
       - name: Build MigTD binary (second pass)
-        run: cargo image
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -e AS=nasm \
+            migtd.buildenv \
+            bash -c "cargo image"
 
       - name: Record sha256 of second build
         run: |
